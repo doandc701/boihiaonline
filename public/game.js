@@ -2813,6 +2813,8 @@ function onMessage(m) {
       net.offset = m.now - Date.now();
       lastDayK = -1;
       updateDayNight();
+      // Kết nối lại (server khởi động lại, mạng chập chờn) thì danh sách cũ có thể còn người đã đi, kể cả bóng của chính mình.
+      [...remotes.keys()].forEach(removeRemote);
       m.players.forEach(addRemote);
       TABLES.forEach((T) => T.dishes.clear());
       m.dishes.forEach((items, table) => items.forEach((item) => serveDish(table, item, true)));
@@ -3083,7 +3085,7 @@ function toast(msg) {
   t._h = setTimeout(() => t.classList.remove('show'), 2800);
 }
 
-const OVERLAYS = { donate: 'overlay-donate', start: 'overlay-start', menu: 'overlay-menu', songs: 'overlay-songs', settings: 'overlay-settings', elevator: 'overlay-elevator', poem: 'overlay-poem', bill: 'overlay-bill', end: 'overlay-end', leave: 'overlay-leave' };
+const OVERLAYS = { donate: 'overlay-donate', start: 'overlay-start', menu: 'overlay-menu', songs: 'overlay-songs', settings: 'overlay-settings', elevator: 'overlay-elevator', poem: 'overlay-poem', bill: 'overlay-bill', end: 'overlay-end', leave: 'overlay-leave', pick: 'overlay-pick' };
 function openModal(name) {
   modal = name;
   for (const [k, id] of Object.entries(OVERLAYS)) $(id).classList.toggle('hidden', k !== name);
@@ -3527,8 +3529,10 @@ function drinkWater() {
   sendAct('water');
 }
 
+// Tên trong một cơ sở không trùng nhau, nên trùng tên với mình là chính mình (hoặc bóng cũ của mình).
+const isMe = (a) => a === meA || a.id === myId || a.name === meA.name;
 function offerDrink(a) {
-  if (state.passedOut) return;
+  if (state.passedOut || isMe(a)) return;
   playAct(meA, 'offer');
   speak(meA, `🍻 mời ${a.name} một ly`, 2500);
   sendAct('offer', { to: a.id });
@@ -3548,7 +3552,7 @@ function oppositeOf(a) {
   const T = TABLES[a.seat.table], yaw = seatYaw(T, a.seat.idx), fx = Math.sin(yaw), fz = Math.cos(yaw);
   let best = null, bestScore = Infinity;
   for (const o of [...allActors(), ...npcs]) {
-    if (o === a || o.seat?.table !== T.id) continue;
+    if (o === a || isMe(o) || o.seat?.table !== T.id) continue;
     const dx = o.x - a.x, dz = o.z - a.z, along = dx * fx + dz * fz, side = Math.abs(dx * fz - dz * fx);
     if (along < 0.3) continue;
     const score = side + along * 0.1;
@@ -3556,12 +3560,32 @@ function oppositeOf(a) {
   }
   return best;
 }
-function inviteOpposite() {
+// Chọn người cùng bàn để mời. Bàn chỉ có một người khác thì mời luôn.
+let pickList = [];
+function invitePick() {
   if (modal || state.passedOut || !meA?.seat) return;
-  const o = oppositeOf(meA);
-  if (!o) return toast('Trước mặt chưa có ai, mời ai bây giờ? 😅');
-  offerDrink(o);
+  const T = meA.seat.table;
+  pickList = [...allActors(), ...npcs].filter((o) => !isMe(o) && o.seat?.table === T).sort((a, b) => a.seat.idx - b.seat.idx);
+  if (!pickList.length) return toast('Bàn chưa có ai khác, mời ai bây giờ? 😅');
+  if (pickList.length === 1) return offerDrink(pickList[0]);
+  const opp = oppositeOf(meA);
+  const wrap = $('pick-list');
+  wrap.innerHTML = '';
+  pickList.forEach((o, i) => {
+    const b = document.createElement('button');
+    b.className = 'lift-btn';
+    b.innerHTML = `<b>${i + 1}</b><span>${escapeHtml(o.name)}${o === opp ? '<small>ngồi đối diện</small>' : ''}</span>`;
+    b.onclick = () => pickInvite(i);
+    wrap.appendChild(b);
+  });
+  openModal('pick');
 }
+function pickInvite(i) {
+  const o = pickList[i];
+  closeModal();
+  if (o && meA.seat && o.seat?.table === meA.seat.table) offerDrink(o);
+}
+$('btn-pick-close').onclick = closeModal;
 
 let invitedBy = null, inviteTimer = 0;
 function showInvite(a) {
@@ -3742,7 +3766,7 @@ const ACTIONS = {
   menu: () => openMenu(),
   stand: () => meA?.seat && !modal && askStand(),
   dance: () => toggleDance(),
-  invite: inviteOpposite,
+  invite: invitePick,
 };
 
 addEventListener('keydown', (e) => {
@@ -3757,6 +3781,8 @@ addEventListener('keydown', (e) => {
     if (e.code === 'Escape' && modal === 'settings') closeSettings();
     else if (e.code === 'Escape' && modal === 'end') closeEnd();
     else if (modal === 'leave' && (e.code === 'Escape' || e.code === 'Enter')) confirmStand(e.code === 'Enter');
+    else if (modal === 'pick' && e.code === 'Escape') closeModal();
+    else if (modal === 'pick' && /^Digit[1-9]$/.test(e.code)) pickInvite(Number(e.code.slice(5)) - 1);
     else if (e.code === 'Escape' && modal === 'donate') closeDonate();
     else if (e.code === 'Escape' && (modal === 'elevator' || modal === 'poem')) closeModal();
     else if (e.code === 'Escape' && (modal === 'menu' || modal === 'songs' || (modal === 'bill' && !state.passedOut))) closeModal();
