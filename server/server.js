@@ -110,6 +110,11 @@ function broadcast(room, msg) {
   const s = JSON.stringify(msg);
   for (const p of room.players.values()) if (p.ws.readyState === 1) p.ws.send(s);
 }
+// Gửi cho những người đang ngồi ở một bàn (hoá đơn chỉ người cùng bàn cần).
+function toTable(room, table, msg) {
+  const s = JSON.stringify(msg);
+  for (const o of room.players.values()) if (o.seat?.table === table && o.ws.readyState === 1) o.ws.send(s);
+}
 const pub = (p) => ({ id: p.id, name: p.name, look: p.look, x: p.x, z: p.z, f: p.f, yaw: p.yaw, d: p.d, seat: p.seat });
 const roomMsg = (room, table) => ({ t: 'room', table, ...(room.privateRooms.get(table) || { owner: null, locked: false }) });
 const micState = (room) => ({ t: 'mic', ...room.mic, queue: room.mic.queue.map((q) => ({ id: q.id, title: q.track.title })) });
@@ -164,6 +169,7 @@ function sit(room, p, m) {
   p.seat = { table: T.id, idx };
   Object.assign(p, seatPos(T, idx), { f: T.floor });
   broadcast(room, { t: 'seat', id: p.id, table: T.id, idx });
+  send(p.ws, tabMsg(room, T.id)); // các bàn khác không nhận cập nhật hoá đơn, nên gửi bản mới nhất khi ngồi
   // Người ngồi đầu tiên vào phòng riêng làm chủ phòng.
   if (T.private && !priv) {
     room.privateRooms.set(T.id, { owner: p.id, locked: false });
@@ -198,11 +204,8 @@ function stand(room, p) {
       room.dishes[table] = [];
       broadcast(room, { t: 'dishes', table, items: [] });
     }
-    const tab = room.tabs[table];
-    if (tab.items.length || tab.pours || tab.paidBy) {
-      room.tabs[table] = newTab();
-      broadcast(room, tabMsg(room, table));
-    }
+    // Không còn ai ngồi để báo; người ngồi sau nhận hoá đơn mới khi ngồi.
+    room.tabs[table] = newTab();
   }
 }
 
@@ -269,7 +272,7 @@ function handle(room, p, m) {
       broadcast(room, { t: 'act', id: p.id, k: m.k, to });
       if (m.k === 'pour' && p.seat) {
         openTab(room, p.seat.table).pours++;
-        broadcast(room, tabMsg(room, p.seat.table));
+        toTable(room, p.seat.table, tabMsg(room, p.seat.table));
       }
       break;
     }
@@ -281,7 +284,7 @@ function handle(room, p, m) {
       broadcast(room, { t: 'dish', table: p.seat.table, item: m.item, by: p.id });
       const tab = openTab(room, p.seat.table);
       if (tab.items.length < 200) tab.items.push(m.item);
-      broadcast(room, tabMsg(room, p.seat.table));
+      toTable(room, p.seat.table, tabMsg(room, p.seat.table));
       break;
     }
     case 'pay': {
@@ -292,8 +295,8 @@ function handle(room, p, m) {
       if (!tab.items.length) { send(p.ws, { t: 'notice', msg: 'Bàn chưa gọi món nào, gọi món trước rồi mới tính tiền nhé!' }); return; }
       tab.paidBy = p.id;
       tab.paidName = p.name;
-      broadcast(room, { t: 'paid', table, by: p.id, name: p.name, total: tabTotal(TABLES[table], tab) });
-      broadcast(room, tabMsg(room, table));
+      toTable(room, table, { t: 'paid', table, by: p.id, name: p.name, total: tabTotal(TABLES[table], tab) });
+      toTable(room, table, tabMsg(room, table));
       break;
     }
     case 'round': {
@@ -425,7 +428,11 @@ const connPerIp = new Map(); // ip -> số kết nối đang mở
 
 function clientIp(req) {
   if (TRUST_PROXY) {
-    const fwd = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+    // Render đứng sau Cloudflare: CF-Connecting-IP / True-Client-IP do Cloudflare ghi đè nên tin được.
+    // Không dùng phần tử đầu của X-Forwarded-For vì client tự gửi được; phần tử cuối do proxy gần nhất thêm vào.
+    const cf = String(req.headers['cf-connecting-ip'] || req.headers['true-client-ip'] || '').trim();
+    if (cf) return cf;
+    const fwd = String(req.headers['x-forwarded-for'] || '').split(',').pop().trim();
     if (fwd) return fwd;
   }
   return req.socket.remoteAddress || '';
