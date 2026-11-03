@@ -157,6 +157,116 @@ function collide(p, f) {
   p.z = clamp(p.z, B.minZ, B.maxZ);
 }
 
+// ---------- Tìm đường tránh vật cản (bấm để đi) ----------
+// Lưới ô CELL m trên mỗi tầng, ô bị chặn nếu tâm ô cách vật cản dưới bán kính người chơi.
+// Vật cản tĩnh dựng một lần (lần đầu tìm đường trên tầng đó), cửa phòng riêng xét lúc tìm vì khoá/mở thay đổi.
+const CELL = 0.25, CLEAR = 0.32;
+const navGrids = [];
+function navGrid(f) {
+  if (navGrids[f]) return navGrids[f];
+  const B = FLOOR_BOUNDS[f], w = Math.ceil((B.maxX - B.minX) / CELL) + 1, h = Math.ceil((B.maxZ - B.minZ) / CELL) + 1;
+  const g = { B, w, h, cells: new Uint8Array(w * h), doors: [] };
+  const mark = (minX, maxX, minZ, maxZ, hit, out = g.cells) => {
+    const i0 = Math.max(0, Math.floor((minX - CLEAR - B.minX) / CELL)), i1 = Math.min(w - 1, Math.ceil((maxX + CLEAR - B.minX) / CELL));
+    const j0 = Math.max(0, Math.floor((minZ - CLEAR - B.minZ) / CELL)), j1 = Math.min(h - 1, Math.ceil((maxZ + CLEAR - B.minZ) / CELL));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) if (hit(B.minX + i * CELL, B.minZ + j * CELL)) out[j * w + i] = 1;
+  };
+  g.markBox = (b, out) => mark(b.minX, b.maxX, b.minZ, b.maxZ,
+    (x, z) => Math.hypot(x - clamp(x, b.minX, b.maxX), z - clamp(z, b.minZ, b.maxZ)) < CLEAR, out);
+  for (const c of colliders[f].circles) mark(c.x - c.r, c.x + c.r, c.z - c.r, c.z + c.r, (x, z) => Math.hypot(x - c.x, z - c.z) < c.r + CLEAR);
+  for (const b of colliders[f].boxes) (b.door !== undefined ? g.doors.push(b) : g.markBox(b));
+  return (navGrids[f] = g);
+}
+
+// Trả về các điểm rẽ từ (sx,sz) tới đích (bỏ điểm xuất phát), đích bị chặn thì dừng ở ô trống gần nhất. null nếu không có đường.
+function findPath(f, sx, sz, tx, tz) {
+  const g = navGrid(f), { B, w, h } = g;
+  const cells = g.cells.slice();
+  for (const d of g.doors) if (doorBlocks(d, { x: sx, z: sz })) g.markBox(d, cells);
+  const cellOf = (x, z) => [clamp(Math.round((x - B.minX) / CELL), 0, w - 1), clamp(Math.round((z - B.minZ) / CELL), 0, h - 1)];
+  const free = (i, j) => i >= 0 && j >= 0 && i < w && j < h && !cells[j * w + i];
+  // Ô trống gần nhất (đang đứng sát vật cản, hoặc bấm trúng bàn/tường)
+  const nearestFree = (i, j) => {
+    for (let r = 0; r <= 12; r++) {
+      let best = null, bd = Infinity;
+      for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) {
+        if (Math.max(Math.abs(di), Math.abs(dj)) !== r || !free(i + di, j + dj)) continue;
+        const d = di * di + dj * dj;
+        if (d < bd) { bd = d; best = [i + di, j + dj]; }
+      }
+      if (best) return best;
+    }
+    return null;
+  };
+  const s = nearestFree(...cellOf(sx, sz)), t = nearestFree(...cellOf(tx, tz));
+  if (!s || !t) return null;
+  const goalBlocked = t[0] !== cellOf(tx, tz)[0] || t[1] !== cellOf(tx, tz)[1];
+  // A* 8 hướng, không cắt góc vật cản
+  const start = s[1] * w + s[0], goal = t[1] * w + t[0];
+  const gScore = new Float32Array(w * h).fill(Infinity), from = new Int32Array(w * h).fill(-1), closed = new Uint8Array(w * h);
+  const heap = [];
+  const push = (n, fs) => {
+    heap.push([fs, n]);
+    for (let k = heap.length - 1; k > 0;) { const p = (k - 1) >> 1; if (heap[p][0] <= heap[k][0]) break; [heap[p], heap[k]] = [heap[k], heap[p]]; k = p; }
+  };
+  const pop = () => {
+    const top = heap[0], last = heap.pop();
+    if (heap.length) {
+      heap[0] = last;
+      for (let k = 0; ;) {
+        const l = 2 * k + 1, r = l + 1;
+        let m = k;
+        if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
+        if (r < heap.length && heap[r][0] < heap[m][0]) m = r;
+        if (m === k) break;
+        [heap[m], heap[k]] = [heap[k], heap[m]];
+        k = m;
+      }
+    }
+    return top[1];
+  };
+  const hfn = (n) => { const dx = Math.abs((n % w) - t[0]), dy = Math.abs(((n / w) | 0) - t[1]); return dx + dy + (Math.SQRT2 - 2) * Math.min(dx, dy); };
+  gScore[start] = 0;
+  push(start, hfn(start));
+  let found = false;
+  for (let iter = 0; heap.length && iter < 80000; iter++) {
+    const n = pop();
+    if (n === goal) { found = true; break; }
+    if (closed[n]) continue;
+    closed[n] = 1;
+    const i = n % w, j = (n / w) | 0;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+      if ((!di && !dj) || !free(i + di, j + dj)) continue;
+      if (di && dj && (!free(i + di, j) || !free(i, j + dj))) continue;
+      const m = (j + dj) * w + i + di, ng = gScore[n] + (di && dj ? Math.SQRT2 : 1);
+      if (ng < gScore[m]) { gScore[m] = ng; from[m] = n; push(m, ng + hfn(m)); }
+    }
+  }
+  if (!found) return null;
+  const pts = [];
+  for (let n = goal; n !== -1; n = from[n]) pts.push({ x: B.minX + (n % w) * CELL, z: B.minZ + ((n / w) | 0) * CELL });
+  pts.reverse();
+  pts[0] = { x: sx, z: sz };
+  if (!goalBlocked) pts[pts.length - 1] = { x: tx, z: tz };
+  // Rút gọn: bỏ các điểm giữa nếu đi thẳng được (dò từng đoạn 0.1 m qua lưới)
+  const clear = (a, b) => {
+    const n = Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 0.1);
+    for (let k = 1; k < n; k++) {
+      const [i, j] = cellOf(a.x + ((b.x - a.x) * k) / n, a.z + ((b.z - a.z) * k) / n);
+      if (!free(i, j)) return false;
+    }
+    return true;
+  };
+  const out = [];
+  for (let a = 0; a < pts.length - 1;) {
+    let b = pts.length - 1;
+    while (b > a + 1 && !clear(pts[a], pts[b])) b--;
+    out.push(pts[b]);
+    a = b;
+  }
+  return out;
+}
+
 // ---------- Vật click được ----------
 // info: { f: tầng (số hoặc hàm), pos(): {x,z}, range, label(): html, action() }
 const clickables = [];
@@ -1167,7 +1277,7 @@ const karaokeSign = add(new THREE.PlaneGeometry(2.6, 0.65), new THREE.MeshBasicM
 karaokeSign.rotation.y = -Math.PI / 2;
 const stageLight = pointLight(F3, 0xe040fb, 0, 7, STAGE.x, 2.4, STAGE.z);
 solidBox(2, STAGE.x + 1.6, STAGE.z, 0.5, 3.6);
-clickable(box(STAGE.w, 1.8, STAGE.d, HIT_MAT, STAGE.x, 0.9, STAGE.z, F3), {
+const stageClick = clickable(box(STAGE.w, 1.8, STAGE.d, HIT_MAT, STAGE.x, 0.9, STAGE.z, F3), {
   f: STAGE.floor,
   pos: () => ({ x: STAGE.x - 0.8, z: STAGE.z }),
   range: 2,
@@ -2523,6 +2633,13 @@ const inMicQueue = () => mic.queue.some((q) => q.id === myId);
 let modal = 'start';
 let busy = null; // hoạt ảnh dzô/rót của mình đang chạy
 let moveTarget = null, pending = null;
+let route = []; // các điểm rẽ tới moveTarget, chỉ dùng khi moveTarget còn (xem walkTo)
+// Đi tới (x,z) theo đường tránh vật cản. Đích nằm trong vật cản thì dừng ở chỗ trống gần nhất.
+function walkTo(x, z) {
+  const path = findPath(meA.f, meA.x, meA.z, x, z);
+  route = path ? path.slice(0, -1) : [];
+  moveTarget = path?.length ? path[path.length - 1] : { x, z };
+}
 const cam = { yaw: 0, pitch: 0.42, dist: 4.5 };
 
 function allActors() {
@@ -3509,11 +3626,12 @@ const marker = add(new THREE.RingGeometry(0.15, 0.22, 24), new THREE.MeshBasicMa
 marker.rotation.x = -Math.PI / 2;
 marker.visible = false;
 
-function pickAt(x, y) {
+// skip: vật click bỏ qua (đang hát thì khối sân khấu bao quanh mình, bấm đâu cũng trúng nó).
+function pickAt(x, y, skip) {
   ndc.set((x / innerWidth) * 2 - 1, -(y / innerHeight) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
   const f = meA?.f ?? 0;
-  const here = clickables.filter((o) => floorOf(o.userData.click) === f);
+  const here = clickables.filter((o) => o !== skip && floorOf(o.userData.click) === f);
   for (const hit of raycaster.intersectObjects(here, false)) {
     if (hit.object === meA?.hit) continue;
     return { info: hit.object.userData.click };
@@ -3558,9 +3676,16 @@ function endPointer(e) {
   if (!p) return;
   pointers.delete(e.pointerId);
   canvas.classList.remove('dragging');
-  if (p.moved || pointers.size > 0 || modal || !state.started || state.passedOut || mic.singer === myId || riding || wcBusy) return;
-  const hit = pickAt(e.clientX, e.clientY);
+  if (p.moved || pointers.size > 0 || modal || !state.started || state.passedOut || riding || wcBusy) return;
+  const hit = pickAt(e.clientX, e.clientY, mic.singer === myId ? stageClick : null);
   if (!hit) return;
+  if (mic.singer === myId) {
+    // Đang hát: bấm trên sân khấu thì thôi, bấm ra ngoài thì rời mic và đi tới đó.
+    const at = hit.info ? hit.info.pos() : hit.point;
+    if (Math.abs(at.x - STAGE.x) < STAGE.w / 2 && Math.abs(at.z - STAGE.z) < STAGE.d / 2) return;
+    send({ t: 'mic-leave' });
+    mic.singer = null; // không chờ server báo lại mới cho đi
+  }
   if (meA.seat) {
     if (hit.info?.tableId === meA.seat.table) return;
     if (hit.info?.kind === 'player') {
@@ -3573,11 +3698,11 @@ function endPointer(e) {
   if (hit.info) {
     pending = hit.info;
     const pos = hit.info.pos();
-    moveTarget = { x: pos.x, z: pos.z };
+    walkTo(pos.x, pos.z);
   } else {
     pending = null;
     const B = FLOOR_BOUNDS[meA.f];
-    moveTarget = { x: clamp(hit.point.x, B.minX, B.maxX), z: clamp(hit.point.z, B.minZ, B.maxZ) };
+    walkTo(clamp(hit.point.x, B.minX, B.maxX), clamp(hit.point.z, B.minZ, B.maxZ));
     marker.position.set(moveTarget.x, meA.f * FLOOR_H + 0.04, moveTarget.z);
     marker.visible = true;
   }
@@ -4003,8 +4128,11 @@ function updateMe(dt, t) {
     moveTarget = pending = null;
     marker.visible = false;
   } else if (moveTarget) {
-    const dx = moveTarget.x - meA.x, dz = moveTarget.z - meA.z, d = Math.hypot(dx, dz);
-    if (d < 0.12) {
+    // Đi qua từng điểm rẽ trước, tới gần điểm rẽ là chuyển sang điểm kế tiếp.
+    while (route.length && Math.hypot(route[0].x - meA.x, route[0].z - meA.z) < 0.25) route.shift();
+    const wp = route[0] || moveTarget;
+    const dx = wp.x - meA.x, dz = wp.z - meA.z, d = Math.hypot(dx, dz);
+    if (!route.length && d < 0.12) {
       moveTarget = null;
       marker.visible = false;
       vx = vz = 0;
@@ -4360,4 +4488,4 @@ function loop() {
 loop();
 
 // Dùng cho kiểm thử trong console
-window.__nhau = { state, rideElevator, cam, audioInfo: () => ({ bgmStep: BGM.step, music: buses.music?.gain.value, ctx: audio?.state }), get me() { return meA; }, get localPlaying() { return !!local.src && { t: +(audio.currentTime - local.at).toFixed(1), dur: +local.buf.duration.toFixed(1), gain: +local.gain.gain.value.toFixed(2) }; }, remotes, TABLES, send, pour, cheers, emote, get mic() { return mic; } };
+window.__nhau = { state, rideElevator, cam, audioInfo: () => ({ bgmStep: BGM.step, music: buses.music?.gain.value, ctx: audio?.state }), get me() { return meA; }, walkTo, findPath, get localPlaying() { return !!local.src && { t: +(audio.currentTime - local.at).toFixed(1), dur: +local.buf.duration.toFixed(1), gain: +local.gain.gain.value.toFixed(2) }; }, remotes, TABLES, send, pour, cheers, emote, get mic() { return mic; } };
