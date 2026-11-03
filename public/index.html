@@ -190,9 +190,14 @@
     </div>
 
     <div id="chat" class="chat hidden">
+      <div class="chat-tabs" role="tablist" aria-label="Kênh chat">
+        <button id="chat-tab-table" type="button" role="tab" data-scope="table">🪑 Bàn<i class="badge hidden"></i></button>
+        <button id="chat-tab-all" type="button" role="tab" data-scope="all">🌏 Cả quán<i class="badge hidden"></i></button>
+      </div>
       <div id="chat-log" class="chat-log"></div>
+      <div id="chat-log-all" class="chat-log hidden"></div>
       <form id="chat-form" autocomplete="off">
-        <input id="chat-input" maxlength="140" placeholder="Enter để chat với cả bàn · E đứng dậy">
+        <input id="chat-input" maxlength="140" placeholder="Enter để chat với cả quán">
         <button type="submit">Gửi</button>
       </form>
     </div>
@@ -219,7 +224,7 @@
           <span class="preview-hint">Kéo để xoay</span>
         </div>
         <div>
-          <label class="field">Tên bạn <input id="player-name" maxlength="20" placeholder="Tuấn Hói" autocomplete="nickname"></label>
+          <div class="field">Tên bạn <span class="name-row"><input id="player-name" maxlength="20" placeholder="Nhập tên của bạn" autocomplete="nickname" required aria-label="Tên bạn"><button id="btn-name-dice" type="button" class="ghost dice" title="Đặt tên ngẫu nhiên" aria-label="Đặt tên ngẫu nhiên">🎲</button></span></div>
           <div class="field">Áo <div id="shirt-picker" class="swatches"></div></div>
           <div class="field">Kiểu <div id="hair-picker" class="seg"></div>
             <label class="belly"><input id="belly" type="checkbox"> Bụng bia</label></div>
@@ -386,6 +391,17 @@
       <h1>🛵 Về nhà an toàn nhé</h1>
       <p class="sub">Đã uống rượu bia thì không lái xe.<br>Lúc nào buồn thì ghé quán ngồi tiếp.</p>
       <button id="btn-return" class="big">Quay lại quán</button>
+    </div>
+  </div>
+
+  <div id="overlay-leave" class="overlay hidden">
+    <div class="panel end-panel">
+      <h1>🪑 Rời bàn?</h1>
+      <p id="leave-msg" class="sub"></p>
+      <p class="row-btns">
+        <button id="btn-leave-stay" class="ghost">Ngồi tiếp</button>
+        <button id="btn-leave-go">Rời bàn</button>
+      </p>
     </div>
   </div>
 

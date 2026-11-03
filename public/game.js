@@ -2672,7 +2672,7 @@ function connect() {
   }
   catch { goOffline(); return; }
   net.ws = ws;
-  ws.onopen = () => ws.send(JSON.stringify({ t: 'hello', name: state.name, look: state.look }));
+  ws.onopen = () => ws.send(JSON.stringify({ t: 'hello', name: state.name, look: state.look, key: joinKey }));
   ws.onmessage = (e) => {
     let m;
     try { m = JSON.parse(e.data); } catch { return; }
@@ -2771,7 +2771,8 @@ function localServer(m) {
       reply({ t: 'mic', singer: null, queue: [] });
       break;
     case 'chat':
-      if (meA.seat) reply({ t: 'chat', id: myId, table: meA.seat.table, text: m.text.trim().slice(0, CHAT_MAX) });
+      if (m.scope === 'all') reply({ t: 'chat', scope: 'all', id: myId, name: state.name, text: m.text.trim().slice(0, CHAT_MAX) });
+      else if (meA.seat) reply({ t: 'chat', id: myId, table: meA.seat.table, text: m.text.trim().slice(0, CHAT_MAX) });
       break;
   }
 }
@@ -2808,6 +2809,7 @@ function onMessage(m) {
       net.online = true;
       myId = m.id;
       meA.id = myId;
+      chatTable = -1; // vào quán mới (hoặc kết nối lại) thì khung chat làm lại từ đầu
       net.offset = m.now - Date.now();
       lastDayK = -1;
       updateDayNight();
@@ -2820,6 +2822,10 @@ function onMessage(m) {
       roomState.clear();
       (m.rooms || []).forEach((rm) => onMessage(rm));
       (m.tabs || []).forEach((tb) => onMessage(tb));
+      $('chat-log-all').innerHTML = '';
+      addChatLine(null, 'Kênh cả quán: ai trong cơ sở này cũng thấy. Ngồi vào bàn thì có thêm kênh riêng của bàn.', 'all');
+      for (const c of m.chatAll || []) addChatLine(c.name, c.text, 'all');
+      setChatScope('all');
       updatePeople();
       break;
     case 'join':
@@ -2946,6 +2952,11 @@ function onMessage(m) {
       break;
     case 'chat': {
       const a = actorById(m.id);
+      if (m.scope === 'all') {
+        if (a) speak(a, m.text, 6000);
+        addChatLine(a === meA ? 'Bạn' : m.name, m.text, 'all');
+        break;
+      }
       if (!a || meA.seat?.table !== m.table) return;
       speak(a, m.text, 6000);
       addChatLine(a === meA ? 'Bạn' : a.name, m.text);
@@ -2962,6 +2973,14 @@ function onMessage(m) {
     }
     case 'notice':
       toast(m.msg);
+      break;
+    case 'name-bad':
+      net.full = true; // không tự kết nối lại, chờ người chơi đổi tên
+      state.started = false;
+      $('hud').classList.add('hidden');
+      openModal('start');
+      loadRooms();
+      askName(m.msg);
       break;
     case 'full':
       net.full = true;
@@ -3049,7 +3068,7 @@ function toast(msg) {
   t._h = setTimeout(() => t.classList.remove('show'), 2800);
 }
 
-const OVERLAYS = { donate: 'overlay-donate', start: 'overlay-start', menu: 'overlay-menu', songs: 'overlay-songs', settings: 'overlay-settings', elevator: 'overlay-elevator', poem: 'overlay-poem', bill: 'overlay-bill', end: 'overlay-end' };
+const OVERLAYS = { donate: 'overlay-donate', start: 'overlay-start', menu: 'overlay-menu', songs: 'overlay-songs', settings: 'overlay-settings', elevator: 'overlay-elevator', poem: 'overlay-poem', bill: 'overlay-bill', end: 'overlay-end', leave: 'overlay-leave' };
 function openModal(name) {
   modal = name;
   for (const [k, id] of Object.entries(OVERLAYS)) $(id).classList.toggle('hidden', k !== name);
@@ -3138,6 +3157,7 @@ function toggleDance(on = !meA?.dancing) {
   if (on) speak(meA, '💃 quẩy lên!', 1800);
 }
 
+let chatTable = -1; // bàn đang có tin nhắn trong khung chat
 function onSitMine() {
   if (meA.dancing) toggleDance(false);
   moveTarget = pending = null;
@@ -3149,13 +3169,43 @@ function onSitMine() {
   const T = TABLES[meA.seat.table];
   if (T === chuBaTable) setTimeout(() => speak(chuBa, 'Ngồi đây con, uống với chú ly rượu.'), 400);
   toast(`Đã ngồi ${tableName(T)} · 2 rót · 1 dzô · 5 gọi mồi`);
-  $('chat-log').innerHTML = '';
-  addChatLine(null, `Đã ngồi ${tableName(T)}. Chỉ người cùng bàn thấy tin nhắn của bạn.`);
+  // Ngồi lại đúng bàn vừa rời thì giữ tin nhắn cũ.
+  if (chatTable !== T.id) {
+    $('chat-log').innerHTML = '';
+    addChatLine(null, `Đã ngồi ${tableName(T)}. Chỉ người cùng bàn thấy tin nhắn của bạn.`);
+  } else addChatLine(null, `Đã quay lại ${tableName(T)}. Lúc vắng mặt bạn không nhận được tin nhắn.`);
+  chatTable = T.id;
+  setChatScope('table');
   renderLockButton();
 }
 
-function addChatLine(name, text) {
-  const log = $('chat-log');
+// Hai kênh: 'table' (cùng bàn) và 'all' (cả quán). Tin đến kênh đang ẩn thì hiện chấm đỏ trên tab.
+let chatScope = 'all';
+function setChatScope(scope) {
+  if (scope === 'table' && !meA?.seat) scope = 'all';
+  chatScope = scope;
+  for (const s of ['table', 'all']) {
+    const tab = $(`chat-tab-${s}`);
+    tab.classList.toggle('on', s === scope);
+    tab.setAttribute('aria-selected', s === scope);
+    if (s === scope) tab.querySelector('.badge').classList.add('hidden');
+  }
+  $('chat-log').classList.toggle('hidden', scope !== 'table');
+  $('chat-log-all').classList.toggle('hidden', scope !== 'all');
+  $('chat-input').placeholder = scope === 'all' ? 'Enter để chat với cả quán' : 'Enter để chat với cả bàn · E đứng dậy';
+  const log = scope === 'all' ? $('chat-log-all') : $('chat-log');
+  log.scrollTop = log.scrollHeight;
+}
+for (const s of ['table', 'all']) {
+  $(`chat-tab-${s}`).onclick = (e) => {
+    setChatScope(s);
+    e.currentTarget.blur(); // trả phím về cho game
+  };
+}
+
+function addChatLine(name, text, scope = 'table') {
+  const log = scope === 'all' ? $('chat-log-all') : $('chat-log');
+  if (scope !== chatScope && name) $(`chat-tab-${scope}`).querySelector('.badge').classList.remove('hidden');
   const line = document.createElement('div');
   if (name) {
     const b = document.createElement('b');
@@ -3174,7 +3224,8 @@ $('chat-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const input = $('chat-input');
   const text = input.value.trim();
-  if (text && meA?.seat) send({ t: 'chat', text: text.slice(0, CHAT_MAX) });
+  if (text && chatScope === 'all') send({ t: 'chat', scope: 'all', text: text.slice(0, CHAT_MAX) });
+  else if (text && meA?.seat) send({ t: 'chat', text: text.slice(0, CHAT_MAX) });
   input.value = '';
   input.blur(); // trả phím về cho game
 });
@@ -3189,6 +3240,7 @@ function onStandMine(T) {
   placeAt(meA, T.x + (dx / d) * 1.75, T.z + (dz / d) * 1.75);
   busy = null;
   renderLockButton();
+  setChatScope('all');
 }
 
 // ---------- Đổi tầng, nhà vệ sinh, phòng riêng ----------
@@ -3358,9 +3410,27 @@ function updateVisibility() {
 
 function interact() {
   if (modal || state.passedOut || mic.singer === myId || riding || wcBusy) return;
-  if (meA.seat) { send({ t: 'stand' }); return; }
+  if (meA.seat) { askStand(); return; }
   if (focus) focus.action();
 }
+
+// Hỏi lại trước khi đứng dậy, vì bấm nhầm là mất hết tin nhắn của bàn.
+let afterStand = null;
+function askStand(then = null) {
+  afterStand = then;
+  $('leave-msg').textContent = `Đứng dậy khỏi ${tableName(TABLES[meA.seat.table])} thì sẽ không thấy tin nhắn của bàn nữa.`;
+  openModal('leave');
+}
+function confirmStand(go) {
+  closeModal();
+  const then = afterStand;
+  afterStand = null;
+  if (!go || !meA.seat) return;
+  send({ t: 'stand' });
+  then?.();
+}
+$('btn-leave-stay').onclick = () => confirmStand(false);
+$('btn-leave-go').onclick = () => confirmStand(true);
 
 function sendAct(k, extra) {
   send({ t: 'act', k, ...extra });
@@ -3583,13 +3653,13 @@ const ACTIONS = {
   wave: () => emote('wave'),
   clap: () => emote('clap'),
   menu: () => openMenu(),
-  stand: () => meA?.seat && !modal && send({ t: 'stand' }),
+  stand: () => meA?.seat && !modal && askStand(),
   dance: () => toggleDance(),
 };
 
 addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement) return;
-  if (e.code === 'Enter' && !modal && meA?.seat) {
+  if (e.code === 'Enter' && !modal && state.started) {
     e.preventDefault();
     $('chat-input').focus();
     return;
@@ -3598,6 +3668,7 @@ addEventListener('keydown', (e) => {
   if (modal) {
     if (e.code === 'Escape' && modal === 'settings') closeSettings();
     else if (e.code === 'Escape' && modal === 'end') closeEnd();
+    else if (modal === 'leave' && (e.code === 'Escape' || e.code === 'Enter')) confirmStand(e.code === 'Enter');
     else if (e.code === 'Escape' && modal === 'donate') closeDonate();
     else if (e.code === 'Escape' && (modal === 'elevator' || modal === 'poem')) closeModal();
     else if (e.code === 'Escape' && (modal === 'menu' || modal === 'songs' || (modal === 'bill' && !state.passedOut))) closeModal();
@@ -3693,8 +3764,12 @@ function endPointer(e) {
       const pos = hit.info.pos();
       if (Math.hypot(pos.x - meA.x, pos.z - meA.z) <= hit.info.range) { hit.info.action(); return; }
     }
-    send({ t: 'stand' });
+    askStand(() => goTo(hit)); // đồng ý rời bàn thì mới đi tới chỗ vừa bấm
+    return;
   }
+  goTo(hit);
+}
+function goTo(hit) {
   if (hit.info) {
     pending = hit.info;
     const pos = hit.info.pos();
@@ -3849,7 +3924,24 @@ if (isTouch) {
   $('chat-input').placeholder = 'Nhắn cho cả bàn…';
 }
 $('prompt').addEventListener('click', () => interact());
-$('player-name').addEventListener('input', () => ($('preview-name').textContent = $('player-name').value.trim() || 'Khách'));
+// Tên ngẫu nhiên kiểu quán nhậu, người chơi đổi lại tuỳ ý.
+const NAME_FIRST = ['Tuấn', 'Hùng', 'Lan', 'Minh', 'Thảo', 'Dũng', 'Hải', 'Ngọc', 'Long', 'Phúc', 'Vy', 'Toàn', 'Quân', 'Trang', 'Khoa', 'Nam', 'Hương', 'Tú', 'Đạt', 'Mai', 'Sơn', 'Linh', 'Cường', 'Huy', 'Yến', 'Kiên', 'Thu', 'Bình', 'Tâm', 'Hiếu'];
+const NAME_NICK = ['Béo', 'Còi', 'Hói', 'Râu', 'Xồm', 'Lùn', 'Tửng', 'Bột', 'Ken', 'Mập', 'Dzô', 'Bia', 'Mồi', 'Sún', 'Lầy', 'Cạn', 'Ròm', 'Đô'];
+const randomName = () => `${pick(NAME_FIRST)} ${pick(NAME_NICK)}`;
+function setName(v) {
+  $('player-name').value = v;
+  $('player-name').classList.remove('invalid');
+  $('preview-name').textContent = v.trim() || '…';
+}
+$('player-name').addEventListener('input', () => setName($('player-name').value));
+$('btn-name-dice').onclick = () => setName(randomName());
+function askName(msg) {
+  $('start-msg').textContent = msg;
+  $('player-name').classList.add('invalid');
+  $('player-name').focus();
+  $('player-name').select();
+}
+const joinKey = crypto.randomUUID?.() ?? String(Math.random()).slice(2); // để server nhận ra tab này khi kết nối lại
 
 function renderPickers() {
   const sp = $('shirt-picker');
@@ -3926,7 +4018,12 @@ async function loadRooms() {
 }
 
 $('btn-enter').onclick = () => {
-  state.name = $('player-name').value.trim().slice(0, 20) || 'Khách';
+  state.name = $('player-name').value.replace(/\s+/g, ' ').trim().slice(0, 20);
+  if (!state.name) {
+    askName('Nhập tên của bạn trước rồi mới vào quán nhé!');
+    return;
+  }
+  $('start-msg').textContent = '';
   try {
     localStorage.setItem('nhau3d-name', state.name);
     localStorage.setItem('nhau3d-look', JSON.stringify(state.look));
@@ -4082,8 +4179,8 @@ applyQuality();
 
 {
   try {
-    $('player-name').value = localStorage.getItem('nhau3d-name') || '';
-    $('preview-name').textContent = $('player-name').value || 'Khách';
+    const saved = localStorage.getItem('nhau3d-name');
+    setName(saved && saved !== 'Khách' ? saved : randomName()); // "Khách" là tên mặc định cũ, không giữ
     Object.assign(state.look, JSON.parse(localStorage.getItem('nhau3d-look')) || {});
   } catch {}
   const qRoom = new URLSearchParams(location.search).get('room');
@@ -4366,14 +4463,14 @@ function updateChatter(dt) {
 function updateFocus() {
   focus = null;
   const el = $('prompt');
-  const chatOn = !!meA?.seat && state.started;
+  const seated = !!meA?.seat && state.started;
   const danceBtn = $('btn-dance');
   danceBtn.classList.toggle('hidden', !canDance() && !meA?.dancing);
   danceBtn.classList.toggle('on', !!meA?.dancing);
   danceBtn.querySelector('span').textContent = meA?.dancing ? 'Thôi nhảy' : 'Nhảy';
-  $('btn-stand').classList.toggle('hidden', !chatOn);
-  $('chat').classList.toggle('hidden', !chatOn);
-  if (!chatOn && document.activeElement === $('chat-input')) $('chat-input').blur();
+  $('btn-stand').classList.toggle('hidden', !seated);
+  $('chat').classList.toggle('hidden', !state.started);
+  $('chat-tab-table').disabled = !seated;
   if (!meA || modal || !state.started || meA.seat) { el.classList.add('hidden'); return; }
   let best = Infinity;
   for (const o of clickables) {

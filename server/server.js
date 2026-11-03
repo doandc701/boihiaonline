@@ -88,7 +88,9 @@ const rooms = new Map(ROOMS.filter((r) => !ACTIVE_ROOMS.length || ACTIVE_ROOMS.i
   micTimer: null,
   dirty: new Set(),
   privateRooms: new Map(), // id bàn phòng riêng -> { owner, locked }
+  chatAll: [], // tin nhắn gần nhất của kênh cả quán, gửi cho người mới vào
 }]));
+const CHAT_ALL_KEEP = 30;
 let nextId = 1;
 function newTab() { return { items: [], pours: 0, paidBy: null, paidName: null }; }
 const tabMsg = (room, table) => ({ t: 'tab', table, ...room.tabs[table], total: tabTotal(TABLES[table], room.tabs[table]) });
@@ -122,8 +124,10 @@ const roomMsg = (room, table) => ({ t: 'room', table, ...(room.privateRooms.get(
 const micState = (room) => ({ t: 'mic', ...room.mic, queue: room.mic.queue.map((q) => ({ id: q.id, title: q.track.title })) });
 
 function cleanName(v) {
-  return String(v ?? '').replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, 20) || 'Khách';
+  return String(v ?? '').replace(/[\u0000-\u001f\u007f<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 20);
 }
+// So tên không phân biệt hoa thường, để "tuấn hói" và "Tuấn Hói" tính là trùng.
+const nameKey = (n) => n.normalize('NFC').toLocaleLowerCase('vi');
 function cleanLook(v) {
   const l = v && typeof v === 'object' ? v : {};
   const int = (x, max) => (Number.isInteger(x) && x >= 0 && x < max ? x : 0);
@@ -136,9 +140,19 @@ function join(room, ws, m) {
     ws.close();
     return null;
   }
+  const name = cleanName(m.name), key = typeof m.key === 'string' ? m.key.slice(0, 64) : '';
+  const reject = (msg) => { send(ws, { t: 'name-bad', msg }); ws.close(); return null; };
+  if (!name) return reject('Nhập tên của bạn trước rồi mới vào quán nhé!');
+  const same = [...room.players.values()].find((o) => nameKey(o.name) === nameKey(name));
+  if (same) {
+    // Cùng một tab kết nối lại (mạng chập chờn) thì thay kết nối cũ, người khác thì phải đổi tên.
+    if (!key || same.key !== key) return reject(`Tên "${name}" đã có người dùng ở ${room.name}, chọn tên khác nhé!`);
+    leave(room, same);
+    same.ws.terminate();
+  }
   const p = {
-    id: String(nextId++), ws, name: cleanName(m.name), look: cleanLook(m.look),
-    x: Math.random() * 2 - 1, z: 2.6, f: 0, yaw: Math.PI, d: 0, seat: null, lastRound: 0, chatTokens: 3, chatLast: Date.now(), cd: {},
+    id: String(nextId++), ws, key, name, look: cleanLook(m.look),
+    x: Math.random() * 2 - 1, z: 2.6, f: 0, yaw: Math.PI, d: 0, seat: null, lastRound: 0, chatTokens: 3, chatLast: Date.now(), allTokens: 2, allLast: Date.now(), cd: {},
   };
   room.players.set(p.id, p);
   send(ws, {
@@ -147,6 +161,7 @@ function join(room, ws, m) {
     dishes: room.dishes, mic: micState(room), features: { ytSearch: !!YOUTUBE_API_KEY },
     rooms: [...room.privateRooms.keys()].map((table) => roomMsg(room, table)),
     tabs: room.tabs.map((_, table) => tabMsg(room, table)),
+    chatAll: room.chatAll,
   });
   for (const o of room.players.values()) if (o !== p) send(o.ws, { t: 'join', player: pub(p) });
   return p;
@@ -322,11 +337,26 @@ function handle(room, p, m) {
       if (cooldown(p, 'lock', 500)) setRoomLock(room, p, m.locked);
       break;
     case 'chat': {
-      // Chỉ người đang ngồi mới chat, và chỉ người cùng bàn nhận được.
-      if (!p.seat || typeof m.text !== 'string') return;
+      // scope 'all': cả quán đều thấy, ai cũng chat được nhưng chậm hơn.
+      // Còn lại: chỉ người đang ngồi mới chat, và chỉ người cùng bàn nhận được.
+      if (typeof m.text !== 'string' || (m.scope !== 'all' && !p.seat)) return;
       const text = m.text.slice(0, 500).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, CHAT_MAX);
       if (!text) return;
       const now = Date.now();
+      if (m.scope === 'all') {
+        p.allTokens = Math.min(2, p.allTokens + (now - p.allLast) / 4000);
+        p.allLast = now;
+        if (p.allTokens < 1) {
+          send(p.ws, { t: 'notice', msg: 'Chat cả quán chậm lại chút, để người khác nói với 😅' });
+          return;
+        }
+        p.allTokens--;
+        const line = { t: 'chat', scope: 'all', id: p.id, name: p.name, text, at: now };
+        room.chatAll.push(line);
+        if (room.chatAll.length > CHAT_ALL_KEEP) room.chatAll.shift();
+        broadcast(room, line);
+        break;
+      }
       p.chatTokens = Math.min(3, p.chatTokens + (now - p.chatLast) / 1500);
       p.chatLast = now;
       if (p.chatTokens < 1) {
@@ -504,7 +534,7 @@ wss.on('connection', (ws, req) => {
   });
   ws.on('close', () => {
     clearTimeout(helloTimer);
-    if (p) leave(room, p);
+    if (p && room.players.get(p.id) === p) leave(room, p);
   });
 });
 

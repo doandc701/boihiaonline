@@ -153,6 +153,9 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
 .panel h1 { margin: 0 0 6px; font-size: clamp(1.5rem, 6vw, 2rem); }
 .sub { color: var(--muted); margin-top: 0; }
 .field { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; margin: 12px 0; }
+.name-row { display: inline-flex; gap: 6px; align-items: center; min-width: 0; }
+.name-row .dice { padding: 6px 10px; font-size: 18px; line-height: 1; }
+.field input.invalid { border-color: #e53935; box-shadow: 0 0 0 2px rgba(229, 57, 53, .25); }
 .field input[type=text], .field input:not([type]) { background: var(--field); color: var(--text); border: 1px solid var(--muted); border-radius: 8px; padding: 8px 12px; font: inherit; min-width: 0; max-width: 100%; }
 .swatches { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
 .swatch { width: 30px; height: 30px; padding: 0; border-radius: 50%; border: 2px solid var(--border); }
@@ -277,6 +280,11 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
 
 /* Chat trong bàn */
 .chat { position: absolute; left: max(12px, env(safe-area-inset-left)); bottom: max(14px, env(safe-area-inset-bottom)); width: min(320px, calc(50% - 220px)); pointer-events: auto; display: flex; flex-direction: column; gap: 6px; }
+.chat-tabs { display: flex; gap: 4px; }
+.chat-tabs button { position: relative; padding: 3px 10px; font-size: .8rem; font-weight: 600; background: var(--surface); color: var(--surface-text); opacity: .8; }
+.chat-tabs button.on { background: var(--accent); color: var(--on-accent); opacity: 1; }
+.chat-tabs button:disabled { opacity: .4; cursor: default; }
+.chat-tabs .badge { position: absolute; top: -2px; right: -2px; width: 9px; height: 9px; border-radius: 50%; background: #e53935; }
 .chat-log { max-height: 160px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; font-size: .85rem; }
 .chat-log div { background: var(--surface); color: var(--surface-text); padding: 3px 8px; border-radius: 8px; overflow-wrap: anywhere; }
 .chat-log b { color: var(--accent); }
