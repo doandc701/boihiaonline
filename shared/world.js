@@ -14,8 +14,11 @@ export const ROOMS = [
 export const FLOOR_H = 3.2;
 export const FLOOR_NAMES = ['Tầng 1', 'Tầng 2 · Phòng riêng', 'Tầng 3 · Sân thượng'];
 export const BUILDING = { minX: -18, maxX: 18, minZ: -16, maxZ: -1 };
+// Bờ biển trước quán (theo z): vỉa hè tới 3.3, đường 3.4–10.6, lối đi bộ ven biển tới bờ tường 13.5,
+// bãi cát tới mép nước SHORE.seaZ. Tầng 1 đi dạo được ra tới mép nước, rộng ±60 m dọc bờ biển.
+export const SHORE = { curbZ: 3.3, roadMaxZ: 10.6, wallZ: 13.5, seaZ: 45, halfW: 60, stairs: [-2.5, 2.5] };
 export const FLOOR_BOUNDS = [
-  { minX: -17.6, maxX: 17.6, minZ: -15.6, maxZ: 3.1 },
+  { minX: -SHORE.halfW, maxX: SHORE.halfW, minZ: -15.6, maxZ: SHORE.seaZ + 1.2 },
   { minX: -17.6, maxX: 17.6, minZ: -15.6, maxZ: -1.4 },
   { minX: -17.6, maxX: 17.6, minZ: -15.6, maxZ: -1.4 },
 ];
@@ -85,20 +88,50 @@ export function tabTotal(T, tab) {
   return tab.items.reduce((s, i) => s + (MENU[i]?.price || 0), 0) + tab.pours * drinkOfTable(T).price;
 }
 
+// Nhóm món để lọc trong thực đơn, theo thứ tự hiển thị.
+export const MENU_CATS = ['Khai vị', 'Nướng', 'Hải sản', 'Đồng quê', 'Lẩu', 'Cơm & rau'];
+// Client và server gửi món theo chỉ số trong mảng này: món mới thêm vào cuối, không chèn hay đổi thứ tự.
+// MENU[0] (lạc rang) còn là món của người bán rong.
 export const MENU = [
-  { icon: '🥜', name: 'Lạc rang', price: 15000 },
-  { icon: '🦑', name: 'Mực nướng', price: 120000 },
-  { icon: '🐌', name: 'Ốc len xào dừa', price: 80000 },
-  { icon: '🍗', name: 'Chân gà nướng', price: 60000 },
-  { icon: '🥩', name: 'Bò nhúng giấm', price: 150000 },
-  { icon: '🍢', name: 'Nem chua rán', price: 50000 },
-  { icon: '🦐', name: 'Tôm nướng muối ớt', price: 140000 },
-  { icon: '🥒', name: 'Dưa chuột', price: 10000 },
-  { icon: '🍲', name: 'Lẩu thái', price: 250000 },
-  { icon: '🐸', name: 'Ếch chiên bơ', price: 110000 },
+  { icon: '🥜', name: 'Lạc rang', price: 15000, cat: 'Khai vị' },
+  { icon: '🦑', name: 'Mực nướng', price: 120000, cat: 'Nướng' },
+  { icon: '🐌', name: 'Ốc len xào dừa', price: 80000, cat: 'Hải sản' },
+  { icon: '🍗', name: 'Chân gà nướng', price: 60000, cat: 'Nướng' },
+  { icon: '🥩', name: 'Bò nhúng giấm', price: 150000, cat: 'Đồng quê' },
+  { icon: '🍢', name: 'Nem chua rán', price: 50000, cat: 'Khai vị' },
+  { icon: '🦐', name: 'Tôm nướng muối ớt', price: 140000, cat: 'Hải sản' },
+  { icon: '🥒', name: 'Dưa chuột', price: 10000, cat: 'Khai vị' },
+  { icon: '🍲', name: 'Lẩu thái', price: 250000, cat: 'Lẩu' },
+  { icon: '🐸', name: 'Ếch chiên bơ', price: 110000, cat: 'Đồng quê' },
+  { icon: '🧈', name: 'Đậu hũ chiên giòn', price: 35000, cat: 'Khai vị' },
+  { icon: '🍟', name: 'Khoai tây chiên', price: 40000, cat: 'Khai vị' },
+  { icon: '🦑', name: 'Khô mực nướng', price: 150000, cat: 'Khai vị' },
+  { icon: '🥭', name: 'Xoài lắc muối ớt', price: 35000, cat: 'Khai vị' },
+  { icon: '🥓', name: 'Ba chỉ nướng', price: 90000, cat: 'Nướng' },
+  { icon: '🌭', name: 'Lòng nướng', price: 70000, cat: 'Nướng' },
+  { icon: '🌿', name: 'Bò cuốn lá lốt', price: 80000, cat: 'Nướng' },
+  { icon: '🍖', name: 'Sườn nướng mật ong', price: 110000, cat: 'Nướng' },
+  { icon: '🐔', name: 'Gà nướng muối ớt', price: 180000, cat: 'Nướng' },
+  { icon: '🦑', name: 'Mực hấp sả', price: 130000, cat: 'Hải sản' },
+  { icon: '🐚', name: 'Nghêu hấp sả', price: 70000, cat: 'Hải sản' },
+  { icon: '🐚', name: 'Sò điệp nướng mỡ hành', price: 90000, cat: 'Hải sản' },
+  { icon: '🦪', name: 'Hàu nướng phô mai', price: 100000, cat: 'Hải sản' },
+  { icon: '🐌', name: 'Ốc hương xào bơ tỏi', price: 150000, cat: 'Hải sản' },
+  { icon: '🦀', name: 'Cua rang me', price: 280000, cat: 'Hải sản' },
+  { icon: '🍋', name: 'Chân gà ngâm sả tắc', price: 60000, cat: 'Đồng quê' },
+  { icon: '🐸', name: 'Da ếch chiên giòn', price: 80000, cat: 'Đồng quê' },
+  { icon: '🐐', name: 'Dê tái chanh', price: 160000, cat: 'Đồng quê' },
+  { icon: '🥘', name: 'Lòng xào dưa cải', price: 90000, cat: 'Đồng quê' },
+  { icon: '🍲', name: 'Lẩu dê', price: 350000, cat: 'Lẩu' },
+  { icon: '🐟', name: 'Lẩu cá kèo lá giang', price: 280000, cat: 'Lẩu' },
+  { icon: '🦞', name: 'Lẩu hải sản', price: 380000, cat: 'Lẩu' },
+  { icon: '🥬', name: 'Rau muống xào tỏi', price: 40000, cat: 'Cơm & rau' },
+  { icon: '🍛', name: 'Cơm chiên hải sản', price: 70000, cat: 'Cơm & rau' },
+  { icon: '🍜', name: 'Mì xào bò', price: 70000, cat: 'Cơm & rau' },
+  { icon: '🥣', name: 'Cháo ngao', price: 50000, cat: 'Cơm & rau' },
 ];
 
-// Hành động người chơi được phát cho cả quán (không có chat).
+// Hành động người chơi được phát cho cả quán.
 export const ACTS = ['cheers', 'pour', 'wave', 'clap', 'water', 'offer', 'dance', 'dance-stop'];
 
 export const SHIRTS = [0x2e86de, 0xe84393, 0xf6b93b, 0x6ab04c, 0xf5f5f5, 0x222222, 0x8e44ad, 0xe55039];

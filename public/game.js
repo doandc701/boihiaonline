@@ -2,11 +2,11 @@
 import * as THREE from 'three';
 window.__boot?.(65, 'Đang dựng quán…');
 import {
-  ROOMS, TABLES, STAGE, MENU, SHIRTS, HAIRS, SONG_MS, MIC_DELAY_MS,
-  FLOOR_H, FLOOR_NAMES, FLOOR_BOUNDS, BUILDING, CORE, ELEVATOR, KITCHEN, WCS, DUMBWAITER, PARKING,
+  ROOMS, TABLES, STAGE, MENU, MENU_CATS, SHIRTS, HAIRS, SONG_MS, MIC_DELAY_MS,
+  FLOOR_H, FLOOR_NAMES, FLOOR_BOUNDS, SHORE, BUILDING, CORE, ELEVATOR, KITCHEN, WCS, DUMBWAITER, PARKING,
   GOLDEN_EVERY, GOLDEN_MS, MAX_SONG_MS, CHAT_MAX, seatPos, seatYaw, nearestFreeSeat, DRINKS, drinkOfTable, tabTotal,
 } from '/shared/world.js';
-import { SONGS, GENRES, parseYouTube } from '/shared/songs.js';
+import { SONGS, GENRES, DEFAULT_SONG, parseYouTube } from '/shared/songs.js';
 
 // ================= Cấu hình =================
 // Tài khoản nhận ủng hộ ("Bao chủ quán một ly"), ảnh QR ở public/donate-qr.png.
@@ -250,7 +250,7 @@ const WALL = 0xd7c4a3, WALL_IN = 0xefe3cc, B = BUILDING, H = FLOOR_H;
 const BW = B.maxX - B.minX, BD = B.maxZ - B.minZ, BCZ = (B.minZ + B.maxZ) / 2; // kích thước toà nhà
 
 // ---------- Đường ven biển & bãi biển (phía trước quán, hướng +z là hướng ra biển) ----------
-const SEA_Z = 45;
+const SEA_Z = SHORE.seaZ;
 const ground = add(new THREE.PlaneGeometry(1200, 50), 0x1d1f24, 0, -0.01, -21.6); // phần đất phía sau
 ground.rotation.x = -Math.PI / 2;
 floorPlane(scene, 1200, 7.2, mat(0x2b2d33), 0, 7, 0); // mặt đường
@@ -262,7 +262,13 @@ for (let x = -300; x < 300; x += 6) box(3, 0.01, 0.15, 0xdddddd, x, 0.01, 7);
 // Lối đi bộ ven biển, hàng dừa, bãi cát, sóng
 floorPlane(scene, 1200, 2.9, tiles('#9e9488', '#7d746a', 400, 1), 0, 12.05, 0.02);
 box(1200, 0.15, 0.25, 0x9a9a9a, 0, 0.07, 10.6);
-box(1200, 0.45, 0.25, 0xe0ddd5, 0, 0.22, 13.5);
+{
+  const [a, b] = SHORE.stairs, W = SHORE.wallZ;
+  for (const [x1, x2] of [[-600, a], [b, 600]]) box(x2 - x1, 0.45, 0.25, 0xe0ddd5, (x1 + x2) / 2, 0.22, W);
+  for (const [x1, x2] of [[-SHORE.halfW, a], [b, SHORE.halfW]]) solidBox(0, (x1 + x2) / 2, W, x2 - x1, 0.25);
+  // bậc xuống bãi cát
+  for (let i = 0; i < 3; i++) box(b - a + 0.6, 0.3 - i * 0.1, 0.35, 0xd6d2c8, 0, (0.3 - i * 0.1) / 2, W + 0.2 + i * 0.35);
+}
 floorPlane(scene, 1200, SEA_Z - 13.6, new THREE.MeshStandardMaterial({ color: 0xe0c896, roughness: 1, emissive: 0x2a2416 }), 0, (13.6 + SEA_Z) / 2, 0);
 floorPlane(scene, 1200, 5, mat(0x8f7d5c, { roughness: 0.6 }), 0, SEA_Z - 2.5, 0.005); // cát ướt
 
@@ -286,12 +292,22 @@ function palm(x, z, h = 6 + Math.random() * 2.5) {
   g.position.set(x, 0, z);
   scene.add(g);
 }
-for (let x = -150; x <= 150; x += 9) palm(x + (Math.random() - 0.5) * 2, 12.2);
+for (let x = -150; x <= 150; x += 9) {
+  const px = x + (Math.random() - 0.5) * 2;
+  palm(px, 12.2);
+  if (Math.abs(px) < SHORE.halfW + 1) solidCircle(0, px, 12.2, 0.25);
+}
 for (let x = -144; x <= 144; x += 18) {
   cyl(0.06, 0.08, 5, 0x37474f, x, 2.5, 11.2);
+  if (Math.abs(x) < SHORE.halfW + 1) solidCircle(0, x, 11.2, 0.12);
   ball(0.16, new THREE.MeshBasicMaterial({ color: 0xfff1c1 }), x, 5.05, 11.2);
 }
 cyl(0.07, 0.09, 4.5, 0x37474f, 10.5, 2.25, 3.5);
+solidCircle(0, 10.5, 3.5, 0.12);
+// Vạch qua đường ngay trước cửa quán
+for (let z = SHORE.curbZ + 0.5; z < SHORE.roadMaxZ - 0.3; z += 0.9) box(3, 0.012, 0.45, 0xf2f2f2, 0, 0.012, z);
+// Mặt trước dãy khách sạn hai bên: không đi vòng ra sau được
+for (const side of [-1, 1]) solidBox(0, side * (B.maxX + SHORE.halfW) / 2, B.maxZ - 0.1, SHORE.halfW - B.maxX, 0.2);
 box(0.9, 0.08, 0.2, 0x37474f, 10.1, 4.5, 3.5);
 ball(0.12, new THREE.MeshBasicMaterial({ color: 0xfff3c4 }), 9.7, 4.4, 3.5);
 pointLight(scene, 0xfff2cc, 14, 16, 9.7, 4.2, 3.5);
@@ -590,28 +606,93 @@ function buildWC(wc) {
     wall(f, wc.minX + 0.15, wc.minZ, wc.minX + 0.15, wc.maxZ, h, WALL_IN);
     box(wc.maxX - wc.minX + 0.3, 0.12, wc.maxZ - wc.minZ + 0.3, 0x6d4c41, (wc.minX + wc.maxX) / 2, h, (wc.minZ + wc.maxZ) / 2, P);
   }
-  for (const s of stalls) {
+  // Mặt trong tường sau, z(d) = điểm cách tường sau d mét vào trong. Sân thượng có vách hông lùi vào 0.15.
+  const inset = f === 2 ? 0.15 : 0;
+  const backFace = back + dz * 0.1, z = (d) => backFace + dz * d;
+  const span = (a, b) => ({ minZ: Math.min(z(a), z(b)), maxZ: Math.max(z(a), z(b)) });
+  const faceIn = dz > 0 ? 0 : Math.PI, faceWall = dz > 0 ? Math.PI : 0; // yaw quay ra phòng / quay vào tường
+  stalls.forEach((s, i) => {
     const cx = (s.minX + s.maxX) / 2, d = wc.maxZ - wc.minZ;
     floorPlane(P, s.maxX - s.minX, d, tiles(s.floorC, '#ffffff', 4, 4), cx, (wc.minZ + wc.maxZ) / 2, 0.015);
-    textPlane(P, s.label, 1.1, 0.4, cx, 2.45, front + dz * 0.12, dz > 0 ? 0 : Math.PI, { bg: s.bg, font: 'bold 52px sans-serif' });
-    const bz = back - dz * 0.45; // sát tường trong
-    const tx = cx - 0.55, sx = cx + 0.6;
-    box(0.45, 0.4, 0.55, 0xfafafa, tx, 0.2, bz, P); // bồn cầu
-    box(0.45, 0.45, 0.18, 0xfafafa, tx, 0.6, back - dz * 0.12, P);
-    box(0.55, 0.15, 0.42, 0xfafafa, sx, 0.85, bz, P); // bồn rửa
+    textPlane(P, s.label, 1.1, 0.4, cx, 2.45, front + dz * 0.12, faceIn, { bg: s.bg, font: 'bold 52px sans-serif' });
+    const x0 = s.minX + 0.1 + (i === 0 ? inset : 0), x1 = s.maxX - 0.1;
+    // Bồn rửa mặt ở góc phải, phần còn lại dành cho buồng / bồn tiểu.
+    const sx = x1 - 0.4, bz = z(0.25);
+    box(0.55, 0.15, 0.42, 0xfafafa, sx, 0.85, bz, P);
     box(0.12, 0.8, 0.12, 0xeeeeee, sx, 0.4, bz, P);
-    const mirror = add(new THREE.PlaneGeometry(0.6, 0.8), mat(0xcfe8ff, { metalness: 0.9, roughness: 0.1 }), sx, 1.6, back - dz * 0.12, P);
-    mirror.rotation.y = dz > 0 ? 0 : Math.PI;
-    solidBox(f, tx, bz, 0.5, 0.7);
+    const mirror = add(new THREE.PlaneGeometry(0.6, 0.8), mat(0xcfe8ff, { metalness: 0.9, roughness: 0.1 }), sx, 1.6, z(0.02), P);
+    mirror.rotation.y = faceIn;
     solidBox(f, sx, bz, 0.55, 0.5);
     clickable(box(0.8, 1.6, 0.9, HIT_MAT, sx, 0.8, bz, P), {
-      f, pos: () => ({ x: sx, z: bz + dz * 0.6 }), range: 1.1, label: () => '💦 <b>rửa mặt</b> cho tỉnh', action: () => refresh('wash'),
+      f, pos: () => ({ x: sx, z: z(0.85) }), range: 1.1, label: () => '💦 <b>rửa mặt</b> cho tỉnh', action: () => refresh('wash'),
     });
-    clickable(box(0.8, 1.4, 0.9, HIT_MAT, tx, 0.7, bz, P), {
-      f, pos: () => ({ x: tx, z: bz + dz * 0.6 }), range: 1.1, label: () => '🚽 <b>đi vệ sinh</b>', action: () => refresh('toilet'),
+    if (i === 0) buildUrinals(f, P, x0, x1 - 0.75, z, span, faceWall);
+    else buildCubicles(f, P, x0, x1 - 0.8, z, span, dz, faceIn);
+  });
+  pointLight(P, 0xe3f2fd, 4, 6, (wc.minX + wc.maxX) / 2, h - 0.4, (wc.minZ + wc.maxZ) / 2);
+}
+
+// Chỗ giải quyết trong WC: bước vào vùng `zone` là tự dùng (xem updateWC), không cần bấm.
+// { kind: 'stall' | 'urinal', f, zone, x, z, yaw: chỗ đứng/ngồi, out: chỗ đứng sau khi xong }
+const wcFixtures = [];
+const stallDoors = []; // cửa buồng nữ: có người bên trong thì đóng lại
+
+const woodTex = canvasTexture(64, 256, (g, w, h) => {
+  g.fillStyle = '#6d4426';
+  g.fillRect(0, 0, w, h);
+  for (let x = 0; x < w; x += 3) {
+    g.fillStyle = `rgba(${Math.random() < 0.5 ? '40,20,5' : '150,95,50'},${0.15 + Math.random() * 0.25})`;
+    g.fillRect(x, 0, 2, h);
+  }
+});
+const WOOD_MAT = new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.85 });
+const PORCELAIN = 0xfafafa, CHROME = mat(0xcfd8dc, { metalness: 0.8, roughness: 0.25 }), STALL_GREY = 0x5f6368;
+
+// Nam: dãy bồn tiểu treo tường, ngăn nhau bằng vách gỗ.
+function buildUrinals(f, P, x0, x1, z, span, faceWall) {
+  const n = Math.max(1, Math.floor((x1 - x0) / 0.6)), sp = (x1 - x0) / n;
+  for (let k = 0; k <= n; k++) box(0.05, 1.25, 0.42, WOOD_MAT, x0 + k * sp, 0.98, z(0.22), P); // vách gỗ
+  for (let u = 0; u < n; u++) {
+    const ux = x0 + (u + 0.5) * sp;
+    const body = add(new THREE.CapsuleGeometry(0.16, 0.36, 6, 14), PORCELAIN, ux, 0.9, z(0.17), P);
+    body.scale.z = 0.85;
+    cyl(0.018, 0.018, 0.38, CHROME, ux, 1.42, z(0.04), P); // ống xả
+    ball(0.035, CHROME, ux, 1.6, z(0.06), P);
+    solidBox(f, ux, z(0.16), 0.34, 0.32);
+    wcFixtures.push({
+      kind: 'urinal', f, x: ux, z: z(0.62), yaw: faceWall,
+      zone: { minX: ux - sp / 2 + 0.04, maxX: ux + sp / 2 - 0.04, ...span(0.3, 0.95) },
     });
   }
-  pointLight(P, 0xe3f2fd, 4, 6, (wc.minX + wc.maxX) / 2, h - 0.4, (wc.minZ + wc.maxZ) / 2);
+}
+
+// Nữ: dãy buồng vách xám chân inox, cửa mở vào trong.
+function buildCubicles(f, P, x0, x1, z, span, dz, faceIn) {
+  const CD = 1.35, n = Math.max(1, Math.floor((x1 - x0) / 0.95)), w = (x1 - x0) / n;
+  box(n * w, 0.04, 0.04, CHROME, x0 + (n * w) / 2, 2.05, z(CD), P); // thanh ray trên cửa
+  for (let c = 0; c < n; c++) {
+    const a = x0 + c * w, b = a + w, cx = (a + b) / 2;
+    // Vách ngăn bên phải mỗi buồng (bên trái buồng đầu là tường), hở chân như ảnh mẫu.
+    box(0.04, 1.85, CD, STALL_GREY, b, 1.075, z(CD / 2), P);
+    solidBox(f, b, z(CD / 2), 0.06, CD);
+    cyl(0.015, 0.015, 0.15, CHROME, b, 0.075, z(CD - 0.05), P);
+    for (const px of [a + 0.05, b - 0.05]) box(0.1, 2.03, 0.04, STALL_GREY, px, 1.015, z(CD), P); // trụ trước
+    // Bồn cầu: két nước sát tường, bệ tròn phía trước.
+    box(0.38, 0.38, 0.16, PORCELAIN, cx, 0.72, z(0.08), P);
+    const bowl = cyl(0.2, 0.16, 0.4, PORCELAIN, cx, 0.2, z(0.36), P);
+    bowl.scale.z = 1.3;
+    cyl(0.21, 0.21, 0.03, 0xeeeeee, cx, 0.415, z(0.36), P).scale.z = 1.3;
+    solidBox(f, cx, z(0.3), 0.42, 0.55);
+    // Cửa: bản lề ở trụ trái, đóng thì nằm ngang mặt trước, mở thì xoay vào trong.
+    const dw = w - 0.2, pivot = new THREE.Group();
+    pivot.position.set(a + 0.1, 0, z(CD));
+    P.add(pivot);
+    box(dw, 1.85, 0.03, STALL_GREY, dw / 2, 1.075, 0, pivot);
+    box(0.03, 0.12, 0.05, CHROME, dw - 0.08, 1.05, 0, pivot); // tay nắm
+    const zone = { minX: a + 0.06, maxX: b - 0.06, ...span(0.55, CD) };
+    stallDoors.push({ pivot, f, zone, open: 1, openAng: dz * 1.5 });
+    wcFixtures.push({ kind: 'stall', f, x: cx, z: z(0.62), yaw: faceIn, zone, out: { x: cx, z: z(1.05) } });
+  }
 }
 WCS.forEach(buildWC);
 
@@ -657,16 +738,24 @@ solidBox(0, 4.8, -2.4, 3, 0.6);
 const roundCrates = new THREE.Group(); // két bia ai đó bao cả quán
 roundCrates.position.set(3.7, 1.25, -2.4);
 F1.add(roundCrates);
-const boardTex = canvasTexture(512, 512, (g) => {
+// Bảng đen thực đơn: chia 2 cột, dòng tự co theo số món.
+const boardTex = canvasTexture(1024, 1024, (g, w, h) => {
   g.fillStyle = '#1f2b1f';
-  g.fillRect(0, 0, 512, 512);
+  g.fillRect(0, 0, w, h);
   g.fillStyle = '#fff';
-  g.font = 'bold 44px sans-serif';
-  g.fillText('THỰC ĐƠN', 140, 60);
-  g.font = '28px sans-serif';
+  g.textAlign = 'center';
+  g.font = 'bold 80px sans-serif';
+  g.fillText('THỰC ĐƠN', w / 2, 100);
+  const rows = Math.ceil(MENU.length / 2), rowH = Math.min(60, (h - 170) / rows);
+  g.font = `${Math.floor(rowH * 0.62)}px sans-serif`;
   MENU.forEach((m, i) => {
-    g.fillText(m.name, 30, 115 + i * 38);
-    g.fillText(m.price / 1000 + 'k', 400, 115 + i * 38);
+    const col = Math.floor(i / rows), x = 30 + col * (w / 2), y = 170 + (i % rows) * rowH;
+    g.textAlign = 'left';
+    fitFont(g, m.name, g.font, w / 2 - 150);
+    g.fillText(m.name, x, y);
+    g.textAlign = 'right';
+    g.fillText(m.price / 1000 + 'k', x + w / 2 - 50, y);
+    g.font = `${Math.floor(rowH * 0.62)}px sans-serif`;
   });
 });
 add(new THREE.PlaneGeometry(1.4, 1.4), new THREE.MeshBasicMaterial({ map: boardTex }), 5, 1.9, KITCHEN.maxZ + 0.12, F1);
@@ -1082,8 +1171,8 @@ clickable(box(STAGE.w, 1.8, STAGE.d, HIT_MAT, STAGE.x, 0.9, STAGE.z, F3), {
   f: STAGE.floor,
   pos: () => ({ x: STAGE.x - 0.8, z: STAGE.z }),
   range: 2,
-  label: () => (mic.singer === myId ? 'đang hát…' : inMicQueue() ? 'đang xếp hàng hát' : '🎤 chọn bài <b>hát karaoke</b>'),
-  action: () => openSongPicker(),
+  label: () => (mic.singer === myId ? 'đang hát…' : inMicQueue() ? 'đang xếp hàng hát' : '🎤 lên <b>hát karaoke</b>'),
+  action: () => singDefault(),
 });
 
 // ---------- Bàn & ghế ----------
@@ -1390,7 +1479,7 @@ clickable(add(new THREE.CylinderGeometry(0.5, 0.5, 1.8, 8), HIT_MAT, 0, 0.9, 0, 
 const npcs = [chuBa, owner, vendor, chef, waiter, guard];
 
 // ================= Bãi biển: người đi dạo và chơi =================
-// Bãi cát từ z ≈ 14 tới mép nước SEA_Z. Người chơi không xuống được bãi, chỉ ngắm từ quán.
+// Bãi cát từ z ≈ 14 tới mép nước SEA_Z. Người chơi đi dạo xuống được qua bậc thang trước quán.
 const beachRnd = (() => { let sd = 2024; return () => (sd = (sd * 16807) % 2147483647) / 2147483647; })();
 const BEACH_SHIRTS = [0xff7043, 0x29b6f6, 0xffee58, 0xab47bc, 0x66bb6a, 0xffffff, 0xef5350, 0x26c6da, 0xffa726];
 const BEACH_SKINS = [0xe8b98f, 0xd9a273, 0xc98d62, 0xf1c8a0];
@@ -1946,17 +2035,24 @@ for (let i = 0; i < 5; i++) {
   g.position.set(-30 + i * 13, 0, forward ? 5.2 : 8.8);
   g.rotation.y = forward ? 0 : Math.PI;
   scene.add(g);
-  traffic.push({ g, speed: (forward ? 1 : -1) * (6 + Math.random() * 4) });
+  const base = (forward ? 1 : -1) * (6 + Math.random() * 4);
+  traffic.push({ g, base, speed: base });
 }
 
 // ================= Cài đặt (lưu trong trình duyệt) =================
 const settings = {
   music: 50, ambience: 70, sfx: 80, karaoke: 80, // âm lượng 0–100
   bgPlay: false, // phát tiếp khi chuyển tab
-  quality: isTouch ? 'low' : 'high',
+  quality: 'high', // điện thoại cũng mặc định Đẹp; ai cần pin thì tự chọn Tiết kiệm pin
+  qualityPicked: false, // người chơi đã tự chọn chất lượng đồ hoạ chưa
   names: true,
 };
-try { Object.assign(settings, JSON.parse(localStorage.getItem('nhau-settings')) || {}); } catch {}
+try {
+  const saved = JSON.parse(localStorage.getItem('nhau-settings')) || {};
+  // Bản cũ lưu sẵn 'low' cho điện thoại dù người chơi chưa chọn: bỏ đi để dùng mặc định mới.
+  if (!saved.qualityPicked) delete saved.quality;
+  Object.assign(settings, saved);
+} catch {}
 const saveSettings = () => { try { localStorage.setItem('nhau-settings', JSON.stringify(settings)); } catch {} };
 
 // ================= Âm thanh =================
@@ -1977,14 +2073,16 @@ function ac() {
   return audio;
 }
 const out = (bus = 'sfx') => (ac(), buses[bus]);
+// Karaoke chỉ vang trên tầng có sân khấu (sân thượng): ai ở tầng đó cũng nghe đủ, tầng khác không nghe.
+const hearsKaraoke = () => !!mic.singer && meA?.f === STAGE.floor;
 function applyVolumes() {
   if (!audio) return;
-  const t = audio.currentTime;
+  const t = audio.currentTime, karaoke = hearsKaraoke();
   buses.ambience.gain.setTargetAtTime(settings.ambience / 100, t, 0.05);
   buses.sfx.gain.setTargetAtTime(settings.sfx / 100, t, 0.05);
-  buses.karaoke.gain.setTargetAtTime(settings.karaoke / 100, t, 0.05);
-  // Có người hát karaoke thì nhạc nền nhỏ dần rồi tắt
-  buses.music.gain.setTargetAtTime(mic.singer ? 0 : (settings.music / 100) * 0.9, t, mic.singer ? 0.6 : 1.2);
+  buses.karaoke.gain.setTargetAtTime(karaoke ? settings.karaoke / 100 : 0, t, 0.3);
+  // Đang nghe karaoke thì nhạc nền nhỏ dần rồi tắt, ở tầng khác nhạc nền vẫn chạy
+  buses.music.gain.setTargetAtTime(karaoke ? 0 : (settings.music / 100) * 0.9, t, karaoke ? 0.6 : 1.2);
 }
 
 // ---------- Nhạc nền quán: tự chơi bằng Web Audio, không dùng bài có bản quyền ----------
@@ -2044,10 +2142,6 @@ function startBgm() {
   BGM.on = true;
   BGM.nextT = audio.currentTime + 0.2;
   BGM.timer = setInterval(scheduleBgm, 100);
-}
-function stopBgm() {
-  BGM.on = false;
-  clearInterval(BGM.timer);
 }
 
 // Chuyển tab: nếu không bật "phát tiếp" thì tạm dừng mọi âm thanh như web chùa.
@@ -2189,13 +2283,63 @@ function loadYT() {
   return ytReady;
 }
 
-const tv = { player: null, yt: null, startAt: 0, failed: false, localMute: false, fallbackTimer: null };
+const tv = { player: null, yt: null, startAt: 0, failed: false, local: false, localMute: false, fallbackTimer: null };
+
+// Bản nhạc có sẵn trên máy (public/music, đã gitignore, không lên GitHub/Vercel): có file thì phát file
+// thay cho video YouTube cùng ID. Bản web không có file nên vẫn dùng YouTube.
+// Phát bằng Web Audio: file tải từ YouTube thường là mảnh DASH, thẻ <audio> không đọc được nhưng decodeAudioData thì được.
+const LOCAL_AUDIO = { t08wq1Dhsho: '/music/det-mong-uyen-uong.m4a' };
+const localBuffers = {}; // yt -> Promise<AudioBuffer | null>
+function localBuffer(yt) {
+  if (!LOCAL_AUDIO[yt]) return Promise.resolve(null);
+  localBuffers[yt] ??= fetch(LOCAL_AUDIO[yt])
+    .then((r) => (r.ok ? r.arrayBuffer() : null))
+    .then((b) => (b ? ac().decodeAudioData(b) : null))
+    .catch(() => null);
+  return localBuffers[yt];
+}
+// local: { buf, src, gain, at: giờ AudioContext ứng với giây 0 của bài }
+const local = { buf: null, src: null, gain: null, at: 0 };
+function startLocal(offset) {
+  const a = ac();
+  local.src?.stop();
+  if (!local.gain) { local.gain = a.createGain(); local.gain.connect(master); }
+  const src = a.createBufferSource();
+  src.buffer = local.buf;
+  src.connect(local.gain);
+  src.onended = () => {
+    // Hết bài thì người hát trả mic cho người tiếp theo.
+    if (local.src === src && mic.singer === myId) send({ t: 'mic-leave' });
+  };
+  // offset < 0: bài chưa tới giờ bắt đầu (server chờ MIC_DELAY_MS) thì hẹn giờ phát.
+  const off = Math.min(offset, local.buf.duration);
+  src.start(off < 0 ? a.currentTime - off : 0, Math.max(0, off));
+  local.src = src;
+  local.at = a.currentTime - off;
+}
+function stopLocal() {
+  const src = local.src;
+  local.src = null;
+  try { src?.stop(); } catch {}
+}
 
 async function playVideo(track, startAt) {
   stopSong();
   clearTimeout(tv.fallbackTimer);
-  Object.assign(tv, { yt: track.yt, startAt, failed: false });
+  Object.assign(tv, { yt: track.yt, startAt, failed: false, local: false });
   $('tv-title').textContent = `🎤 ${track.title}${track.by ? ' · ' + track.by : ''}`;
+  const buf = await localBuffer(track.yt);
+  if (tv.yt !== track.yt) return; // đã đổi bài trong lúc tải
+  if (buf) {
+    try { tv.player?.stopVideo?.(); } catch {}
+    tv.local = true;
+    local.buf = buf;
+    $('tv').classList.add('hidden');
+    startLocal((serverNow() - startAt) / 1000);
+    syncVideo();
+    applyVolumes();
+    return;
+  }
   $('tv').classList.remove('hidden');
   let YT;
   try { YT = await loadYT(); } catch { videoFailed(); return; }
@@ -2222,6 +2366,8 @@ async function playVideo(track, startAt) {
 function stopVideo() {
   clearTimeout(tv.fallbackTimer);
   tv.yt = null;
+  tv.local = false;
+  stopLocal();
   try { tv.player?.stopVideo?.(); } catch {}
   $('tv').classList.add('hidden');
 }
@@ -2237,8 +2383,19 @@ function videoFailed() {
   if (mic.singer === myId) tv.fallbackTimer = setTimeout(() => send({ t: 'mic-leave' }), Math.max(0, left));
 }
 
-// Giữ video khớp giờ server, chỉnh âm lượng theo khoảng cách tới sân khấu.
+// Nhạc từ file trên máy: khớp giờ server, cả tầng sân khấu nghe như nhau (xem hearsKaraoke).
+function syncLocal() {
+  if (!local.src || !local.gain) return;
+  const a = ac(), elapsed = (serverNow() - tv.startAt) / 1000;
+  if (elapsed < local.buf.duration && Math.abs(a.currentTime - local.at - elapsed) > 2.5) startLocal(elapsed);
+  const off = !hearsKaraoke() || tv.localMute || muted || (document.hidden && !settings.bgPlay);
+  local.gain.gain.setTargetAtTime(off ? 0 : settings.karaoke / 100, a.currentTime, 0.3);
+}
+
+// Giữ video khớp giờ server; âm lượng theo tầng như syncLocal.
+
 function syncVideo() {
+  if (tv.local && tv.yt) return syncLocal();
   const p = tv.player;
   if (!p?.getPlayerState || !tv.yt || tv.failed) return;
   const elapsed = (serverNow() - tv.startAt) / 1000;
@@ -2249,11 +2406,8 @@ function syncVideo() {
   }
   if (st === -1 || st === 2 || st === 5) p.playVideo();
   if (st === 1 && Math.abs(p.getCurrentTime() - elapsed) > 2.5) p.seekTo(elapsed, true);
-  // Ở tầng dưới vẫn nghe vọng xuống nhưng nhỏ.
-  const d = meA ? Math.hypot(meA.rx - STAGE.x, meA.rz - STAGE.z) : 10;
-  const near = meA && meA.f !== STAGE.floor ? 12 : clamp(100 - d * 5, 20, 100);
-  p.setVolume(Math.round((near * settings.karaoke) / 100));
-  if (tv.localMute || muted || settings.karaoke === 0 || (document.hidden && !settings.bgPlay)) p.mute();
+  p.setVolume(settings.karaoke);
+  if (!hearsKaraoke() || tv.localMute || muted || settings.karaoke === 0 || (document.hidden && !settings.bgPlay)) p.mute();
   else p.unMute();
 }
 setInterval(syncVideo, 1000);
@@ -2269,9 +2423,19 @@ $('tv-sound').onclick = () => {
 let songGenre = 'Tất cả';
 const fold = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').toLowerCase();
 
-function openSongPicker() {
+// Lên sân khấu là hát bài mặc định luôn, muốn bài khác thì bấm "Đổi bài" trên thanh mic.
+function singDefault() {
   if (mic.singer === myId) return;
   if (inMicQueue()) return toast('Bạn đang xếp hàng rồi, chờ tới lượt nhé!');
+  const s = SONGS.find((x) => x.id === DEFAULT_SONG);
+  send({ t: 'mic-join', song: s.id });
+  toast(`🎤 Hát “${s.title}”, muốn bài khác thì bấm 🎵 Đổi bài`);
+}
+
+// force: mở ngay cả khi vẫn đang giữ mic (vừa gửi mic-leave để đổi bài, server chưa kịp báo lại).
+function openSongPicker(force = false) {
+  if (!force && mic.singer === myId) return;
+  if (!force && inMicQueue()) return toast('Bạn đang xếp hàng rồi, chờ tới lượt nhé!');
   $('song-hint').textContent = features.ytSearch
     ? 'Chọn bài là có video karaoke kèm lời chạy chữ.'
     : 'Bài có 🎬 sẽ phát video karaoke. Bài khác dùng beat tự chế, hoặc dán link YouTube karaoke ở trên.';
@@ -2297,12 +2461,12 @@ function renderSongs() {
   const songs = SONGS.filter((s) => (songGenre === 'Tất cả' || s.genre === songGenre) && (!q || fold(`${s.title} ${s.by}`).includes(q)));
   for (const s of songs) {
     const b = document.createElement('button');
-    b.className = 'song';
+    b.className = s.id === DEFAULT_SONG ? 'song default' : 'song';
     const info = document.createElement('span');
     const t = document.createElement('b');
     t.textContent = s.title;
     const by = document.createElement('small');
-    by.textContent = `${s.by} · ${s.genre}`;
+    by.textContent = `${s.id === DEFAULT_SONG ? '⭐ Mặc định · ' : ''}${s.by} · ${s.genre}`;
     info.append(t, by);
     const badge = document.createElement('span');
     badge.textContent = s.yt || features.ytSearch ? '🎬' : '🎹';
@@ -2743,7 +2907,10 @@ function renderMicBar() {
     const b = document.createElement('button');
     b.textContent = mic.singer === myId ? 'Dừng hát' : 'Rời hàng';
     b.onclick = () => send({ t: 'mic-leave' });
-    bar.appendChild(b);
+    const change = document.createElement('button');
+    change.textContent = '🎵 Đổi bài';
+    change.onclick = () => { send({ t: 'mic-leave' }); openSongPicker(true); };
+    bar.append(change, b);
   }
 }
 
@@ -2807,10 +2974,21 @@ function setFill(f) {
   meA.person.liquid.visible = f > 0.02;
 }
 
+let menuCat = null; // nhóm món đang lọc, null = tất cả
 function renderMenu() {
+  const cats = $('menu-cats');
+  cats.innerHTML = '';
+  for (const c of [null, ...MENU_CATS]) {
+    const b = document.createElement('button');
+    b.textContent = c ?? 'Tất cả';
+    b.className = c === menuCat ? 'on' : '';
+    b.onclick = () => { menuCat = c; renderMenu(); $('menu-items').parentElement.scrollTop = 0; };
+    cats.appendChild(b);
+  }
   const wrap = $('menu-items');
   wrap.innerHTML = '';
   MENU.forEach((m, i) => {
+    if (menuCat && m.cat !== menuCat) return;
     const b = document.createElement('button');
     b.className = 'menu-item';
     b.innerHTML = `<b>${m.icon} ${m.name}</b><small>${fmt(m.price)}</small>`;
@@ -2958,22 +3136,51 @@ function refresh(kind) {
   const now = performance.now();
   if (now - lastRefresh < 20000) return toast('Vừa đi xong mà, từ từ đã 😅');
   lastRefresh = now;
-  state.drunk -= kind === 'toilet' ? 12 : 8;
+  state.drunk -= 8;
   updateDrunk();
-  if (kind === 'toilet') {
-    const fade = $('fade');
-    fade.style.transition = 'opacity .3s';
-    fade.style.opacity = 0.85;
-    noiseHit(1.6, 500, 0.2, 'lowpass', 0.4); // tiếng xả nước
-    setTimeout(() => {
-      fade.style.opacity = 0;
-      setTimeout(() => (fade.style.transition = ''), 350);
-      toast('Nhẹ cả người 😌 (độ say giảm)');
-    }, 1300);
+  noiseHit(1.2, 2500, 0.1);
+  toast('Rửa mặt nước lạnh, tỉnh hẳn ra 💦');
+}
+
+// Bước vào buồng / đứng trước bồn tiểu là tự giải quyết: khoá di chuyển vài giây rồi trả lại.
+let wcBusy = false, wcZone = null;
+function useFixture(fx) {
+  if (state.passedOut || wcBusy) return;
+  const now = performance.now();
+  if (now - lastRefresh < 20000) return toast('Vừa đi xong mà, từ từ đã 😅');
+  lastRefresh = now;
+  wcBusy = true;
+  moveTarget = pending = null;
+  marker.visible = false;
+  if (meA.dancing) toggleDance(false);
+  placeAt(meA, fx.x, fx.z, fx.yaw);
+  const stall = fx.kind === 'stall';
+  if (stall) {
+    setSeated(meA.person, true);
+    meA.person.cup.visible = false;
+    speak(meA, '🚽 …', 2800);
   } else {
-    noiseHit(1.2, 2500, 0.1);
-    toast('Rửa mặt nước lạnh, tỉnh hẳn ra 💦');
+    speak(meA, '💦', 2300);
+    noiseHit(2.2, 3200, 0.05, 'bandpass'); // tiếng róc rách
   }
+  setTimeout(() => {
+    noiseHit(1.6, 500, 0.2, 'lowpass'); // tiếng xả nước
+    if (stall) {
+      setSeated(meA.person, false);
+      placeAt(meA, fx.out.x, fx.out.z, fx.yaw);
+    }
+    state.drunk -= stall ? 12 : 10;
+    updateDrunk();
+    toast('Nhẹ cả người 😌 (độ say giảm)');
+    wcBusy = false;
+  }, stall ? 3200 : 2600);
+}
+// Gọi mỗi khung hình: chỉ kích hoạt khi vừa bước vào một chỗ mới, đứng yên trong đó không lặp lại.
+function updateWC() {
+  if (!meA || meA.seat || wcBusy) return;
+  const fx = wcFixtures.find((x) => x.f === meA.f && inRect(x.zone, meA.x, meA.z)) || null;
+  if (fx && fx !== wcZone) useFixture(fx);
+  wcZone = fx;
 }
 
 function renderLockButton() {
@@ -2989,7 +3196,27 @@ $('btn-lock').onclick = () => {
 };
 
 // Ở trong nhà thì ẩn các tầng phía trên và tường mặt tiền tầng đang đứng (kiểu cắt lớp như The Sims).
-let lastWhere = '';
+// Tên khu vực ở tầng 1 theo khoảng cách ra biển (xem SHORE trong world.js).
+function outdoorArea(z) {
+  if (z < BUILDING.maxZ) return 'Trong nhà';
+  if (z < SHORE.curbZ) return 'Vỉa hè';
+  if (z < SHORE.roadMaxZ) return 'Đang qua đường';
+  if (z < SHORE.wallZ) return 'Đường đi bộ ven biển';
+  if (z < SEA_Z - 0.4) return 'Bãi biển';
+  return 'Mép nước';
+}
+// Lội ra mép nước: báo một lần mỗi lần xuống nước, kèm tiếng sóng vỗ.
+let inWater = false;
+function updateWading() {
+  if (!meA || meA.f !== 0) return;
+  const wet = meA.z > SEA_Z - 0.4;
+  if (wet && !inWater) {
+    noiseHit(1.4, 900, 0.15, 'lowpass');
+    toast('🌊 Nước biển mát rượi, tỉnh cả người!');
+  }
+  inWater = wet;
+}
+let lastWhere = '', heardFloor = -1; // heardFloor: tầng lúc cập nhật âm lượng karaoke gần nhất
 function updateVisibility() {
   const f = meA?.f ?? 0;
   const inside = !!meA && state.started && (f > 0 || meA.rz < BUILDING.maxZ - 0.1);
@@ -2999,12 +3226,12 @@ function updateVisibility() {
   if (!meA) return;
   const T = meA.seat ? TABLES[meA.seat.table] : null;
   const where = T ? `🪑 ${T.name} · ${FLOOR_NAMES[T.floor]}`
-    : `📍 ${FLOOR_NAMES[f]}${f === 0 ? (meA.rz < BUILDING.maxZ ? ' · Trong nhà' : ' · Vỉa hè') : ''}`;
+    : `📍 ${FLOOR_NAMES[f]}${f === 0 ? ` · ${outdoorArea(meA.rz)}` : ''}`;
   if (where !== lastWhere) $('where').textContent = lastWhere = where;
 }
 
 function interact() {
-  if (modal || state.passedOut || mic.singer === myId || riding) return;
+  if (modal || state.passedOut || mic.singer === myId || riding || wcBusy) return;
   if (meA.seat) { send({ t: 'stand' }); return; }
   if (focus) focus.action();
 }
@@ -3186,14 +3413,14 @@ function resetSession() {
   $('fade').style.opacity = 0;
 }
 
+// Popup chào về nhà chưa rời quán thật: ✕ là ở lại quán, "Quay lại quán" mới kết thúc cuộc và vào lại từ đầu.
 function leaveForHome() {
-  saveSession();
-  state.leaving = true;
-  net.ws?.close();
-  stopSong();
-  stopVideo();
-  stopBgm();
   openModal('end');
+}
+function closeEnd() {
+  // Đã gục thì không ngồi tiếp được, quay về hoá đơn để chọn tăng 2 hoặc về nhà.
+  if (state.passedOut) showBill();
+  else closeModal();
 }
 
 // ================= Giờ vàng =================
@@ -3244,7 +3471,7 @@ addEventListener('keydown', (e) => {
   keys[e.code] = true;
   if (modal) {
     if (e.code === 'Escape' && modal === 'settings') closeSettings();
-    else if (e.code === 'Escape' && modal === 'end') location.reload();
+    else if (e.code === 'Escape' && modal === 'end') closeEnd();
     else if (e.code === 'Escape' && modal === 'donate') closeDonate();
     else if (e.code === 'Escape' && (modal === 'elevator' || modal === 'poem')) closeModal();
     else if (e.code === 'Escape' && (modal === 'menu' || modal === 'songs' || (modal === 'bill' && !state.passedOut))) closeModal();
@@ -3322,7 +3549,7 @@ function endPointer(e) {
   if (!p) return;
   pointers.delete(e.pointerId);
   canvas.classList.remove('dragging');
-  if (p.moved || pointers.size > 0 || modal || !state.started || state.passedOut || mic.singer === myId || riding) return;
+  if (p.moved || pointers.size > 0 || modal || !state.started || state.passedOut || mic.singer === myId || riding || wcBusy) return;
   const hit = pickAt(e.clientX, e.clientY);
   if (!hit) return;
   if (meA.seat) {
@@ -3592,7 +3819,7 @@ $('btn-enter').onclick = () => {
   closeModal();
   connect();
   updatePeople();
-  setTimeout(() => toast('Click vào một bàn để ngồi. Không có chat, chỉ có dzô 🍻'), 800);
+  setTimeout(() => toast('Click vào một bàn để ngồi. Không có nát, chỉ có dzô 🍻'), 800);
 };
 $('btn-menu-close').onclick = closeModal;
 $('btn-menu-bill').onclick = showBill;
@@ -3603,8 +3830,13 @@ $('btn-again').onclick = () => { resetSession(); closeModal(); toast('Tăng 2! �
 $('btn-home').onclick = leaveForHome;
 $('btn-bill-back').onclick = closeModal;
 $('btn-pay').onclick = () => send({ t: 'pay' });
-$('btn-return').onclick = () => location.reload();
-$('btn-end-close').onclick = () => location.reload(); // đã rời quán (ngắt kết nối), nên đóng là về màn bắt đầu
+$('btn-return').onclick = () => {
+  saveSession();
+  state.leaving = true; // không tự kết nối lại trong lúc tải lại trang
+  net.ws?.close();
+  location.reload();
+};
+$('btn-end-close').onclick = closeEnd;
 $('btn-people').onclick = () => $('people-panel').classList.toggle('hidden');
 $('btn-sound').onclick = () => {
   muted = !muted;
@@ -3625,7 +3857,7 @@ function applyQuality() {
     const b = document.createElement('button');
     b.textContent = label;
     b.className = q === settings.quality ? 'on' : '';
-    b.onclick = () => { settings.quality = q; saveSettings(); applyQuality(); };
+    b.onclick = () => { settings.quality = q; settings.qualityPicked = true; saveSettings(); applyQuality(); };
     sw.appendChild(b);
   }
 }
@@ -3751,7 +3983,7 @@ function updateMe(dt, t) {
       done?.();
     }
   }
-  if (meA.seat || modal || state.passedOut || mic.singer === myId || riding) return;
+  if (meA.seat || modal || state.passedOut || mic.singer === myId || riding || wcBusy) return;
 
   let f = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
   let s = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
@@ -3913,6 +4145,12 @@ function updateWorld(dt, t) {
     d.open += ((near ? 1 : 0) - d.open) * Math.min(1, dt * 6);
     d.pivot.rotation.y = d.open * 1.45 * d.dz;
   }
+  // Cửa buồng nữ: trống thì để mở, có người vào thì đóng
+  for (const d of stallDoors) {
+    const used = allActors().some((a) => a.f === d.f && inRect(d.zone, a.rx, a.rz));
+    d.open += ((used ? 0 : 1) - d.open) * Math.min(1, dt * 5);
+    d.pivot.rotation.y = d.open * d.openAng;
+  }
   dumbwaiterLamps.forEach((l) => {
     const on = performance.now() < (l.userData.until || 0);
     l.material.color.setHex(on ? (Math.floor(t * 6) % 2 ? 0x76ff03 : 0x33691e) : 0x33691e);
@@ -3928,6 +4166,10 @@ function updateWorld(dt, t) {
   }
 
   for (const c of traffic) {
+    // Có người đi ngang ngay trước mặt (trong làn, phía trước tối đa 6 m) thì phanh, qua rồi chạy tiếp.
+    const dir = Math.sign(c.base), cx = c.g.position.x, cz = c.g.position.z;
+    const blocked = allActors().some((a) => a.f === 0 && Math.abs(a.rz - cz) < 1.3 && (a.rx - cx) * dir > -0.6 && (a.rx - cx) * dir < 6);
+    c.speed += ((blocked ? 0 : c.base) - c.speed) * Math.min(1, dt * (blocked ? 6 : 1.2));
     c.g.position.x += c.speed * dt;
     if (Math.abs(c.g.position.x) > 32) c.g.position.x = -Math.sign(c.speed) * 32;
   }
@@ -4077,6 +4319,13 @@ function loop() {
   if (meA) {
     const px = meA.x, pz = meA.z;
     updateMe(dt, t);
+    updateWC();
+    updateWading();
+    if (meA.f !== heardFloor) {
+      heardFloor = meA.f;
+      applyVolumes();
+      syncVideo();
+    }
     meA._sp = Math.hypot(meA.x - px, meA.z - pz) / Math.max(dt, 1e-4);
   }
   updateWorld(dt, t);
@@ -4102,4 +4351,4 @@ function loop() {
 loop();
 
 // Dùng cho kiểm thử trong console
-window.__nhau = { state, rideElevator, cam, audioInfo: () => ({ bgmStep: BGM.step, music: buses.music?.gain.value, ctx: audio?.state }), get me() { return meA; }, remotes, TABLES, send, pour, cheers, emote, get mic() { return mic; } };
+window.__nhau = { state, rideElevator, cam, audioInfo: () => ({ bgmStep: BGM.step, music: buses.music?.gain.value, ctx: audio?.state }), get me() { return meA; }, get localPlaying() { return !!local.src && { t: +(audio.currentTime - local.at).toFixed(1), dur: +local.buf.duration.toFixed(1), gain: +local.gain.gain.value.toFixed(2) }; }, remotes, TABLES, send, pour, cheers, emote, get mic() { return mic; } };

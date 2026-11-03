@@ -247,12 +247,17 @@
   </div>
 
   <div id="overlay-menu" class="overlay hidden">
-    <div class="panel">
-      <h2>📜 Thực đơn</h2>
-      <p id="menu-target" class="sub"></p>
-      <div id="menu-items" class="menu-items"></div>
-      <button id="btn-round" class="round">🍻 Bao cả quán một két <small>(500.000đ ảo)</small></button>
-      <div class="row-btns">
+    <div class="panel framed menu-panel">
+      <div class="panel-head">
+        <h2>📜 Thực đơn</h2>
+        <p id="menu-target" class="sub"></p>
+        <div id="menu-cats" class="seg menu-cats" role="group" aria-label="Nhóm món"></div>
+      </div>
+      <div class="panel-body">
+        <div id="menu-items" class="menu-items"></div>
+        <button id="btn-round" class="round">🍻 Bao cả quán một két <small>(500.000đ ảo)</small></button>
+      </div>
+      <div class="panel-foot row-btns">
         <button id="btn-menu-bill" class="ghost">💸 Tính tiền</button>
         <button id="btn-menu-close">Xong</button>
       </div>
@@ -323,8 +328,9 @@
   </div>
 
   <div id="overlay-settings" class="overlay hidden">
-    <div class="panel settings">
-      <h2>⚙️ Cài đặt</h2>
+    <div class="panel framed settings">
+      <div class="panel-head"><h2>⚙️ Cài đặt</h2></div>
+      <div class="panel-body">
 
       <section>
         <h3>🔊 Âm thanh</h3>
@@ -355,8 +361,9 @@
           <li><b>Tiếng sóng, tiếng phố, hiệu ứng:</b> tổng hợp trực tiếp trong trình duyệt.</li>
         </ul>
       </details>
+      </div>
 
-      <div class="row-btns"><button id="btn-settings-close">Xong</button></div>
+      <div class="panel-foot row-btns"><button id="btn-settings-close">Xong</button></div>
     </div>
   </div>
 

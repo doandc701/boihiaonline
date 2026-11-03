@@ -204,9 +204,16 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
 .lift-btn.here b { background: var(--muted); }
 
 /* Cài đặt */
+/* Header và footer cố định, chỉ phần giữa cuộn; panel luôn vừa khung màn hình. */
+.panel.framed { display: flex; flex-direction: column; padding: 0; overflow: hidden; max-height: min(100%, 100dvh); }
+.panel.framed h2 { text-align: center; margin: 0; }
 .panel.settings { max-width: 520px; text-align: left; }
-.panel.settings h2 { text-align: center; margin-top: 0; }
+.panel-head { flex: none; padding: 16px 24px 12px; border-bottom: 1px solid var(--border-soft); }
+.panel-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 0 24px 12px; }
+.panel-foot { flex: none; margin: 0; padding: 12px 24px; border-top: 1px solid var(--border-soft); }
+.panel-foot button { min-width: 140px; }
 .settings section { border-top: 1px solid var(--border-soft); padding: 10px 0 4px; }
+.settings .panel-body > section:first-child { border-top: 0; }
 .settings h3 { margin: 4px 0 10px; font-size: 1rem; }
 .settings .field { justify-content: flex-start; }
 .slider { display: grid; grid-template-columns: minmax(0, 1fr) minmax(110px, 160px) 2.6em; align-items: center; gap: 10px; margin: 8px 0; font-size: .92rem; }
@@ -219,6 +226,14 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
   .slider { grid-template-columns: 1fr 2.6em; }
   .slider span { grid-column: 1 / -1; }
 }
+@media (max-width: 640px) {
+  .panel-head, .panel-body, .panel-foot { padding-left: 16px; padding-right: 16px; }
+  .panel-foot button { flex: 1; }
+}
+@media (max-height: 500px) {
+  .panel-head { padding-top: 10px; padding-bottom: 8px; }
+  .panel-foot { padding-top: 8px; padding-bottom: 8px; }
+}
 
 /* Màn bắt đầu: xem trước nhân vật + form */
 .panel.start { max-width: 760px; }
@@ -229,6 +244,13 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
 .preview-name { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); font-size: .8rem; font-weight: 700; padding: 1px 10px; border-radius: 99px; background: var(--accent); color: var(--on-accent); max-width: 90%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .preview-hint { position: absolute; left: 0; right: 0; bottom: 6px; font-size: .72rem; color: var(--muted); }
 
+/* Thực đơn: lọc theo nhóm, danh sách cuộn trong panel */
+.panel.menu-panel { max-width: 640px; }
+.panel.menu-panel .sub { margin: 4px 0 0; }
+.menu-cats { display: flex; flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; gap: 6px; margin-top: 10px; padding-bottom: 2px; scrollbar-width: none; }
+.menu-cats::-webkit-scrollbar { display: none; }
+.menu-cats button { flex: none; }
+.menu-panel .panel-body { padding-top: 12px; }
 .menu-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
 .menu-item { background: var(--field); border-radius: 10px; padding: 10px; text-align: left; color: var(--text); font-weight: 400; }
 .menu-item b { display: block; }
@@ -269,6 +291,7 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
 .song-list { display: grid; gap: 6px; max-height: 40vh; overflow: auto; text-align: left; }
 .song { background: var(--field); color: var(--text); border-radius: 10px; padding: 8px 12px; font-weight: 400; display: flex; justify-content: space-between; align-items: center; gap: 8px; text-align: left; }
 .song:hover { background: var(--field-hover); }
+.song.default { outline: 2px solid var(--accent); }
 .song b { display: block; }
 .song small { color: var(--muted); }
 .paste { display: flex; gap: 8px; margin-top: 12px; }

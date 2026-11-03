@@ -8,7 +8,11 @@
 
 export const GENRES = ['Nhạc trẻ', 'Bolero', 'Quẩy bàn nhậu', 'Song ca'];
 
+// Bài mặc định: lên sân khấu là hát bài này ngay.
+export const DEFAULT_SONG = 'det-mong-uyen-uong';
+
 export const SONGS = [
+  { id: DEFAULT_SONG, title: 'Dệt Mộng Uyên Ương', by: 'Độ Mixi (AI Cover)', genre: 'Nhạc trẻ', yt: 't08wq1Dhsho' },
   // Nhạc trẻ
   { id: 'noi-nay-co-anh', title: 'Nơi Này Có Anh', by: 'Sơn Tùng M-TP', genre: 'Nhạc trẻ' },
   { id: 'con-mua-ngang-qua', title: 'Cơn Mưa Ngang Qua', by: 'Sơn Tùng M-TP', genre: 'Nhạc trẻ' },
