@@ -33,6 +33,7 @@ Mở nhiều tab hoặc nhiều máy trong cùng mạng là thấy nhau.
 ## Luật chơi
 
 - **Ngồi bàn:** click vào bàn để ngồi ghế trống.
+- **Dzô:** một người dzô là cả bàn dzô theo. Bấm 🤝 (phím 8) mời người đối diện, đồng ý là cùng dzô.
 - **Chat:** kênh 🌏 Cả quán ai trong cơ sở cũng thấy, kênh 🪑 Bàn chỉ người cùng bàn thấy.
 - **Karaoke:** lên sân khấu chọn bài và xếp hàng. Người đứng dưới bấm 💃 để nhảy theo.
 - **Giờ vàng:** cứ 10 phút, cả quán cùng dzô.

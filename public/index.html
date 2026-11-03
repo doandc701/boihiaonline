@@ -185,6 +185,7 @@
       <button data-act="clap" title="Vỗ tay (4)"><kbd>4</kbd><b>👏</b><span>Vỗ tay</span></button>
       <button data-act="menu" title="Gọi mồi (5 / M)"><kbd>5</kbd><b>📜</b><span>Gọi mồi</span></button>
       <button data-act="water" title="Nước lọc (6 / N)"><kbd>6</kbd><b>💧</b><span>Nước lọc</span></button>
+      <button data-act="invite" id="btn-invite" class="hidden" title="Mời người đối diện một ly (8)"><kbd>8</kbd><b>🤝</b><span>Mời ly</span></button>
       <button data-act="dance" id="btn-dance" class="hidden" title="Nhảy theo nhạc (7)"><kbd>7</kbd><b>💃</b><span>Nhảy</span></button>
       <button data-act="stand" id="btn-stand" class="hidden" title="Đứng dậy (E)"><kbd>E</kbd><b>🚶</b><span>Đứng dậy</span></button>
     </div>
@@ -241,7 +242,7 @@
           <li><b>Click sàn</b> hoặc <b>WASD</b> để đi · <b>kéo</b> để xoay · <b>lăn chuột</b> để zoom</li>
           <li><b>Click bàn</b> (hoặc <b>E</b>) để ngồi vào ghế trống</li>
           <li>Ngồi rồi: <b>1</b> dzô · <b>2</b> rót · <b>5</b> gọi mồi · <b>6</b> nước lọc · <b>B</b> tính tiền</li>
-          <li><b>3</b> vẫy chào · <b>4</b> vỗ tay · click người khác để <b>mời một ly</b></li>
+          <li><b>8</b> mời người đối diện một ly, đồng ý là cả bàn dzô · <b>3</b> vẫy chào · <b>4</b> vỗ tay</li>
           <li>Lên <b>sân khấu karaoke</b> xếp hàng hát. Mỗi 10 phút có <b>giờ vàng</b>, cả quán cùng dzô</li>
         </ul>
       </details>
@@ -403,6 +404,14 @@
         <button id="btn-leave-go">Rời bàn</button>
       </p>
     </div>
+  </div>
+
+  <div id="invite" class="invite hidden" role="alertdialog" aria-live="assertive">
+    <span id="invite-text"></span>
+    <span class="invite-btns">
+      <button id="btn-invite-no" class="ghost">Để sau</button>
+      <button id="btn-invite-ok">🍻 Dzô!</button>
+    </span>
   </div>
 
   <div id="fade"></div>

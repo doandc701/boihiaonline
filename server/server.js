@@ -333,6 +333,21 @@ function handle(room, p, m) {
     case 'mic-leave':
       if (cooldown(p, 'mic-leave', 500)) removeFromMic(room, p.id);
       break;
+    case 'invite': {
+      // Mời ly: cả hai phải đang ngồi. Người được mời có 15 giây để trả lời.
+      const o = room.players.get(m.to);
+      if (!o || o === p || !p.seat || !o.seat || !cooldown(p, 'invite', 3000)) return;
+      p.inviteTo = { id: o.id, at: Date.now() };
+      send(o.ws, { t: 'invite', id: p.id });
+      break;
+    }
+    case 'invite-reply': {
+      const o = room.players.get(m.to);
+      if (!o || o.inviteTo?.id !== p.id || Date.now() - o.inviteTo.at > 15000) return;
+      o.inviteTo = null;
+      send(o.ws, { t: 'invite-reply', id: p.id, ok: !!m.ok });
+      break;
+    }
     case 'room-lock':
       if (cooldown(p, 'lock', 500)) setRoomLock(room, p, m.locked);
       break;

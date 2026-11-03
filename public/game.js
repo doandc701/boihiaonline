@@ -2886,14 +2886,13 @@ function onMessage(m) {
         speak(a, target ? `🍻 mời ${target === meA ? 'bạn' : target.name} một ly` : '🍻', 2500);
         a.anim = 'offer';
         a.animT = 0;
-        if (m.to === myId) {
-          toast(`${a.name} mời bạn một ly! 🍻`);
-          if (meA.seat && state.fill < 0.5) setFill(0.95);
-        }
       } else if (m.k === 'dance' || m.k === 'dance-stop') {
         a.dancing = m.k === 'dance';
         if (a.dancing) speak(a, '💃 nhảy nào!', 1800);
-      } else playAct(a, m.k);
+      } else {
+        playAct(a, m.k);
+        if (m.k === 'cheers') tableCheers(a);
+      }
       break;
     }
     case 'dish': {
@@ -2974,6 +2973,22 @@ function onMessage(m) {
     case 'notice':
       toast(m.msg);
       break;
+    case 'invite': {
+      const a = remotes.get(m.id);
+      if (a && meA.seat && !state.passedOut) showInvite(a);
+      else send({ t: 'invite-reply', to: m.id, ok: false });
+      break;
+    }
+    case 'invite-reply': {
+      const a = remotes.get(m.id);
+      if (!a) break;
+      if (!m.ok) { toast(`${a.name} bảo để sau 😅`); break; }
+      toast(`${a.name} đồng ý, dzô! 🍻`);
+      if (state.fill < 0.5) setFill(0.95);
+      // Cùng bàn thì cái dzô của người kia kéo cả bàn (cả mình) dzô theo; khác bàn thì tự dzô.
+      if (a.seat?.table !== meA.seat?.table) { if (busy) busy = null; cheers(); }
+      break;
+    }
     case 'name-bad':
       net.full = true; // không tự kết nối lại, chờ người chơi đổi tên
       state.started = false;
@@ -3452,14 +3467,35 @@ function cheers() {
   if (!meA.seat) return toast('Phải ngồi vào bàn mới dzô được!');
   if (busy) return;
   if (state.fill < 0.5) return toast('Ly rỗng mà đòi dzô à? Rót đi đã! (2)');
-  const T = TABLES[meA.seat.table];
-  playAct(meA, 'cheers');
   sendAct('cheers');
   onAnyAct(meA, 'cheers');
-  if (T === chuBaTable) {
-    playAct(chuBa, 'cheers');
-    setTimeout(() => speak(chuBa, pick(LINES.chuBaCheers)), 200);
+  drinkUp();
+  tableCheers(meA);
+}
+
+// Một người dzô là cả bàn cùng nâng ly (mỗi máy tự diễn cho bàn của người đó).
+function tableCheers(by) {
+  const table = by.seat?.table;
+  if (table === undefined) return;
+  for (const o of [...allActors(), ...npcs]) {
+    if (o === by || o.seat?.table !== table) continue;
+    if (o === meA) joinCheers();
+    else playAct(o, 'cheers');
   }
+  if (table === chuBaTable.id) setTimeout(() => speak(chuBa, pick(LINES.chuBaCheers)), 200);
+}
+function joinCheers() {
+  if (state.passedOut || busy) return;
+  if (state.fill < 0.5) {
+    playAct(meA, 'cheers');
+    toast('Cả bàn dzô mà ly bạn rỗng! Rót đi (2)');
+    return;
+  }
+  drinkUp();
+}
+function drinkUp() {
+  const T = TABLES[meA.seat.table];
+  playAct(meA, 'cheers');
   setTimeout(() => clinkSound(), 400);
   const from = state.fill;
   busy = {
@@ -3496,7 +3532,58 @@ function offerDrink(a) {
   playAct(meA, 'offer');
   speak(meA, `🍻 mời ${a.name} một ly`, 2500);
   sendAct('offer', { to: a.id });
+  // Cùng ngồi thì gửi lời mời, đồng ý là dzô. Chú Ba thì lúc nào cũng nhận.
+  if (!meA.seat || !a.seat) return;
+  if (state.fill < 0.5) setFill(0.95); // mời thì tự rót sẵn
+  if (a === chuBa) {
+    setTimeout(() => { speak(chuBa, 'Được, dzô con!', 2000); cheers(); }, 900);
+    return;
+  }
+  send({ t: 'invite', to: a.id });
+  toast(`Đã mời ${a.name}, chờ trả lời…`);
 }
+
+// Người ngồi đối diện: người ngồi trước mặt, lệch sang hai bên ít nhất.
+function oppositeOf(a) {
+  const T = TABLES[a.seat.table], yaw = seatYaw(T, a.seat.idx), fx = Math.sin(yaw), fz = Math.cos(yaw);
+  let best = null, bestScore = Infinity;
+  for (const o of [...allActors(), ...npcs]) {
+    if (o === a || o.seat?.table !== T.id) continue;
+    const dx = o.x - a.x, dz = o.z - a.z, along = dx * fx + dz * fz, side = Math.abs(dx * fz - dz * fx);
+    if (along < 0.3) continue;
+    const score = side + along * 0.1;
+    if (score < bestScore) { bestScore = score; best = o; }
+  }
+  return best;
+}
+function inviteOpposite() {
+  if (modal || state.passedOut || !meA?.seat) return;
+  const o = oppositeOf(meA);
+  if (!o) return toast('Trước mặt chưa có ai, mời ai bây giờ? 😅');
+  offerDrink(o);
+}
+
+let invitedBy = null, inviteTimer = 0;
+function showInvite(a) {
+  invitedBy = a.id;
+  $('invite-text').innerHTML = `<b>${escapeHtml(a.name)}</b> mời bạn một ly 🍻`;
+  $('invite').classList.remove('hidden');
+  clearTimeout(inviteTimer);
+  inviteTimer = setTimeout(() => answerInvite(false), 12000);
+}
+function answerInvite(ok) {
+  if (!invitedBy) return;
+  clearTimeout(inviteTimer);
+  $('invite').classList.add('hidden');
+  send({ t: 'invite-reply', to: invitedBy, ok });
+  invitedBy = null;
+  if (!ok || !meA.seat || state.passedOut) return;
+  if (state.fill < 0.5) setFill(0.95); // người mời rót cho
+  if (busy) busy = null;
+  cheers();
+}
+$('btn-invite-ok').onclick = () => answerInvite(true);
+$('btn-invite-no').onclick = () => answerInvite(false);
 
 function openMenu() {
   if (state.passedOut) return;
@@ -3655,6 +3742,7 @@ const ACTIONS = {
   menu: () => openMenu(),
   stand: () => meA?.seat && !modal && askStand(),
   dance: () => toggleDance(),
+  invite: inviteOpposite,
 };
 
 addEventListener('keydown', (e) => {
@@ -3676,7 +3764,7 @@ addEventListener('keydown', (e) => {
   }
   const map = {
     Digit1: 'cheers', Space: 'cheers', Digit2: 'pour', KeyR: 'pour', Digit3: 'wave', Digit4: 'clap',
-    Digit5: 'menu', KeyM: 'menu', Digit6: 'water', KeyN: 'water', KeyE: 'interact', Digit7: 'dance',
+    Digit5: 'menu', KeyM: 'menu', Digit6: 'water', KeyN: 'water', KeyE: 'interact', Digit7: 'dance', Digit8: 'invite',
   };
   if (map[e.code]) {
     e.preventDefault();
@@ -4323,7 +4411,19 @@ function updateActor(a, dt, t) {
   R.rotation.z += (rz - R.rotation.z) * k;
   L.rotation.x += (lx - L.rotation.x) * k;
   L.rotation.z += (lz - L.rotation.z) * k;
-  p.cup.rotation.x = -R.rotation.x + (a.anim === 'drink' ? -0.9 : 0);
+  // Ly để trên bàn trước mặt, chỉ cầm lên tay khi dzô hoặc mời.
+  const inHand = a.anim === 'cheers' || a.anim === 'drink' || a.anim === 'offer' || !p.seated;
+  if (inHand && p.cup.parent !== R) {
+    R.add(p.cup);
+    p.cup.position.set(0, -0.28, 0.06);
+    p.cup.scale.setScalar(1.3);
+  } else if (!inHand && p.cup.parent !== p.root) {
+    p.root.add(p.cup);
+    p.cup.position.set(-0.16, 0.66, 0.6); // mặt bàn cao 0.57, ly to hơn cho dễ nhìn
+    p.cup.rotation.set(0, 0, 0);
+    p.cup.scale.setScalar(1.8);
+  }
+  if (inHand) p.cup.rotation.x = -R.rotation.x + (a.anim === 'drink' ? -0.9 : 0);
   p.cup.visible = p.seated && !a.singing;
   p.bottle.visible = a.anim === 'pour';
   p.bottle.rotation.x = -L.rotation.x + 1.9;
@@ -4469,6 +4569,7 @@ function updateFocus() {
   danceBtn.classList.toggle('on', !!meA?.dancing);
   danceBtn.querySelector('span').textContent = meA?.dancing ? 'Thôi nhảy' : 'Nhảy';
   $('btn-stand').classList.toggle('hidden', !seated);
+  $('btn-invite').classList.toggle('hidden', !seated);
   $('chat').classList.toggle('hidden', !state.started);
   $('chat-tab-table').disabled = !seated;
   if (!meA || modal || !state.started || meA.seat) { el.classList.add('hidden'); return; }

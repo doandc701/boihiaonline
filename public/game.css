@@ -278,6 +278,16 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
 }
 #toast.show { transform: translateX(-50%) translateY(0); }
 
+/* Lời mời ly */
+.invite {
+  position: fixed; left: 50%; top: calc(120px + env(safe-area-inset-top)); transform: translateX(-50%); z-index: 6;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: center;
+  background: var(--panel); color: var(--text); border: 2px solid var(--accent); border-radius: 14px; padding: 10px 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .25); max-width: calc(100% - 32px); pointer-events: auto;
+}
+.invite-btns { display: flex; gap: 8px; }
+.invite button { padding: 6px 14px; }
+
 /* Chat trong bàn */
 .chat { position: absolute; left: max(12px, env(safe-area-inset-left)); bottom: max(14px, env(safe-area-inset-bottom)); width: min(320px, calc(50% - 220px)); pointer-events: auto; display: flex; flex-direction: column; gap: 6px; }
 .chat-tabs { display: flex; gap: 4px; }
