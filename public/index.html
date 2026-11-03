@@ -274,13 +274,10 @@
   <div id="overlay-songs" class="overlay hidden">
     <div class="panel">
       <h2>🎤 Chọn bài hát</h2>
-      <input id="song-search" class="search" placeholder="Tìm tên bài, ca sĩ…" autocomplete="off">
+      <input id="song-search" class="search" placeholder="Tìm tên bài, ca sĩ… (Enter để tìm trên YouTube)" autocomplete="off" enterkeyhint="search">
       <div id="song-genres" class="seg wrap"></div>
       <div id="song-list" class="song-list"></div>
-      <div class="paste">
-        <input id="song-url" placeholder="Hoặc dán link YouTube karaoke…" autocomplete="off">
-        <button id="btn-song-url">Hát bài này</button>
-      </div>
+      <button id="btn-yt-search" class="yt-search">🔎 Tìm trên YouTube</button>
       <p id="song-hint" class="small"></p>
       <div class="row-btns"><button id="btn-songs-close" class="ghost">Đóng</button></div>
     </div>

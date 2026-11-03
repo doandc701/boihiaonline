@@ -50,7 +50,7 @@ Mở nhiều tab hoặc nhiều máy trong cùng mạng là thấy nhau.
 | `ALLOWED_ORIGINS` | Domain trang web được phép kết nối |
 | `TRUST_PROXY=1` | Khi chạy sau reverse proxy |
 | `MAX_CONN_PER_IP` | Số kết nối tối đa mỗi IP |
-| `YOUTUBE_API_KEY` | Tự tìm video karaoke trên YouTube |
+| `YOUTUBE_API_KEY` | Không bắt buộc. Có key thì tìm bài trên YouTube bằng API chính thức (ổn định hơn) |
 
 ## Triển khai
 

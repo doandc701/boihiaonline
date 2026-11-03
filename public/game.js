@@ -1336,7 +1336,7 @@ cssRenderer.render(cssScene, camera); // gắn iframe vào trang ngay để YouT
 
 // Gọi mỗi khung hình: bật lỗ màn chiếu khi có video và tầng sân khấu đang hiện.
 function updateScreen() {
-  const on = !!(tv.yt && tv.player && !tv.failed && floors[STAGE.floor].visible);
+  const on = !!(tv.yt && tv.player && !tv.local && !tv.failed && floors[STAGE.floor].visible);
   stageScreen.material = on ? screenHoleMat : screenIdleMat;
   cssRenderer.domElement.style.visibility = on ? 'visible' : 'hidden';
   if (!on) return;
@@ -2254,15 +2254,20 @@ function ac() {
 }
 const out = (bus = 'sfx') => (ac(), buses[bus]);
 // Karaoke chỉ vang trên tầng có sân khấu (sân thượng): ai ở tầng đó cũng nghe đủ, tầng khác không nghe.
-const hearsKaraoke = () => !!mic.singer && meA?.f === STAGE.floor;
+// Karaoke trên sân thượng: tầng sân khấu nghe rõ nhất, xuống mỗi tầng nhỏ dần.
+const KARAOKE_FLOOR_LEVEL = { 2: 1, 1: 0.4, 0: 0.15 };
+// Ra biển: qua khỏi vỉa hè thì karaoke nhỏ dần, tới bãi biển (tường kè) thì tắt hẳn, nhường lại nhạc nền.
+const beachAway = () => (meA?.f === 0 ? THREE.MathUtils.clamp((meA.z - SHORE.curbZ) / (SHORE.wallZ - SHORE.curbZ), 0, 1) : 0);
+const karaokeLevel = () => (mic.singer && meA ? (KARAOKE_FLOOR_LEVEL[meA.f] ?? 0) * (1 - beachAway()) : 0);
 function applyVolumes() {
   if (!audio) return;
-  const t = audio.currentTime, karaoke = hearsKaraoke();
+  const t = audio.currentTime;
   buses.ambience.gain.setTargetAtTime(settings.ambience / 100, t, 0.05);
   buses.sfx.gain.setTargetAtTime(settings.sfx / 100, t, 0.05);
-  buses.karaoke.gain.setTargetAtTime(karaoke ? settings.karaoke / 100 : 0, t, 0.3);
-  // Đang nghe karaoke thì nhạc nền nhỏ dần rồi tắt, ở tầng khác nhạc nền vẫn chạy
-  buses.music.gain.setTargetAtTime(karaoke ? 0 : (settings.music / 100) * 0.9, t, karaoke ? 0.6 : 1.2);
+  buses.karaoke.gain.setTargetAtTime((settings.karaoke / 100) * karaokeLevel(), t, 0.3);
+  // Có người hát thì nhạc nền cả quán nhỏ dần rồi tắt; càng ra xa phía biển thì nhạc nền càng to lại.
+  const bgm = mic.singer ? beachAway() : 1;
+  buses.music.gain.setTargetAtTime((settings.music / 100) * 0.9 * bgm, t, bgm < 1 ? 0.6 : 1.2);
 }
 
 // ---------- Nhạc nền quán: tự chơi bằng Web Audio, không dùng bài có bản quyền ----------
@@ -2328,7 +2333,8 @@ function startBgm() {
 document.addEventListener('visibilitychange', () => {
   if (!audio) return;
   if (document.hidden && !settings.bgPlay) audio.suspend();
-  else if (!document.hidden) audio.resume();
+  // Quay lại tab: chờ âm thanh chạy lại rồi mới khớp giờ, tránh phát lại đoạn cũ trước khi nhảy.
+  else if (!document.hidden) audio.resume().then(syncVideo);
   syncVideo();
 });
 // Điện thoại chỉ cho bật âm thanh trong lúc người dùng chạm: khoá màn hình/chuyển app quay lại mà âm thanh
@@ -2370,6 +2376,49 @@ function noiseHit(sec, freq, vol, type = 'bandpass', when = 0) {
   return src;
 }
 const pourSound = () => noiseHit(0.8, 900, 0.25);
+
+// Tiếng hô "2, 3… dô! 2, 3… uống!" (file thu sẵn). Hết tiếng mới nâng ly uống.
+// end: giây cuối còn tiếng (bỏ khoảng lặng ở đuôi file), tính khi giải mã xong.
+const DZO = { buf: null, end: 0, loading: null };
+function loadDzo() {
+  DZO.loading ??= fetch('/music/ho-dzo.mp3')
+    .then((r) => (r.ok ? r.arrayBuffer() : null))
+    .then((b) => (b ? ac().decodeAudioData(b) : null))
+    .then((buf) => {
+      if (!buf) return;
+      const d = buf.getChannelData(0);
+      let i = d.length - 1;
+      while (i > 0 && Math.abs(d[i]) < 0.02) i--;
+      DZO.buf = buf;
+      DZO.end = Math.min(buf.duration, i / buf.sampleRate + 0.1);
+    })
+    .catch(() => {});
+  return DZO.loading;
+}
+// Thời gian chờ trước khi uống; file chưa tải xong thì chỉ cụng ly rồi uống luôn.
+const dzoWait = () => (DZO.buf ? DZO.end : 0.5);
+function dzoCallSound(vol = 1) {
+  if (!DZO.buf) {
+    loadDzo();
+    clinkSound(vol);
+    return;
+  }
+  const a = ac(), src = a.createBufferSource(), g = a.createGain();
+  src.buffer = DZO.buf;
+  g.gain.value = vol;
+  src.connect(g).connect(out());
+  src.start(a.currentTime, 0, DZO.end);
+}
+// Bong bóng trên đầu người hô, chia đôi theo hai câu hô.
+function dzoCount(a) {
+  const w = dzoWait() * 1000;
+  speak(a, '🗣️ 2, 3… dô!', w / 2 + 100);
+  setTimeout(() => speak(a, '🗣️ 2, 3… uống!', w / 2 + 100), w / 2);
+}
+// Người khác dzô: hô xong mới nâng ly.
+function cheersLater(a) {
+  setTimeout(() => playAct(a, 'cheers'), dzoWait() * 1000);
+}
 function dingSound() {
   const a = ac();
   [1320, 990].forEach((f, i) => {
@@ -2512,6 +2561,7 @@ function stopLocal() {
 
 async function playVideo(track, startAt) {
   stopSong();
+  stopLocal(); // đổi bài: tắt tiếng file của bài trước (nếu bài trước phát từ file)
   clearTimeout(tv.fallbackTimer);
   Object.assign(tv, { yt: track.yt, startAt, failed: false, local: false });
   $('tv-title').textContent = `🎤 ${track.title}${track.by ? ' · ' + track.by : ''}`;
@@ -2520,11 +2570,14 @@ async function playVideo(track, startAt) {
   const buf = await localBuffer(track.yt);
   if (tv.yt !== track.yt) return; // đã đổi bài trong lúc tải
   if (buf) {
-    // Tiếng phát từ file, video YouTube vẫn chiếu (tắt tiếng) trên màn sân khấu.
+    // Tiếng phát từ file, màn sân khấu hiện tên bài. Không chạy kèm video YouTube để
+    // máy khỏi phải giải mã thêm một video trong lúc phát nhạc.
+    try { tv.player?.stopVideo?.(); } catch {}
     tv.local = true;
     local.buf = buf;
     startLocal((serverNow() - startAt) / 1000);
     applyVolumes();
+    return;
   }
   let YT;
   try { YT = await loadYT(); } catch { videoFailed(); return; }
@@ -2577,19 +2630,19 @@ function videoFailed() {
   if (mic.singer === myId) tv.fallbackTimer = setTimeout(() => send({ t: 'mic-leave' }), Math.max(0, left));
 }
 
-// Nhạc từ file trên máy: khớp giờ server, cả tầng sân khấu nghe như nhau (xem hearsKaraoke).
+// Nhạc từ file trên máy: khớp giờ server, to nhỏ theo tầng (xem karaokeLevel).
 function syncLocal() {
   if (!local.src || !local.gain) return;
   const a = ac(), elapsed = (serverNow() - tv.startAt) / 1000;
   if (elapsed < local.buf.duration && Math.abs(a.currentTime - local.at - elapsed) > 2.5) startLocal(elapsed);
-  const off = !hearsKaraoke() || tv.localMute || muted || (document.hidden && !settings.bgPlay);
-  local.gain.gain.setTargetAtTime(off ? 0 : settings.karaoke / 100, a.currentTime, 0.3);
+  const off = tv.localMute || muted || (document.hidden && !settings.bgPlay);
+  local.gain.gain.setTargetAtTime(off ? 0 : (settings.karaoke / 100) * karaokeLevel(), a.currentTime, 0.3);
 }
 
 // Giữ video khớp giờ server; âm lượng theo tầng như syncLocal.
 
 function syncVideo() {
-  if (tv.local && tv.yt) syncLocal();
+  if (tv.local && tv.yt) return syncLocal();
   const p = tv.player;
   if (!tv.ready || !tv.yt || tv.failed) return;
   const elapsed = (serverNow() - tv.startAt) / 1000;
@@ -2600,8 +2653,9 @@ function syncVideo() {
   }
   if (st === -1 || st === 2 || st === 5) p.playVideo();
   if (st === 1 && Math.abs(p.getCurrentTime() - elapsed) > 2.5) p.seekTo(elapsed, true);
-  p.setVolume(settings.karaoke);
-  if (tv.local || !hearsKaraoke() || tv.localMute || muted || settings.karaoke === 0 || (document.hidden && !settings.bgPlay)) p.mute();
+  const level = karaokeLevel();
+  p.setVolume(Math.round(settings.karaoke * level));
+  if (!level || tv.localMute || muted || settings.karaoke === 0 || (document.hidden && !settings.bgPlay)) p.mute();
   else p.unMute();
 }
 setInterval(syncVideo, 1000);
@@ -2625,15 +2679,13 @@ function singDefault() {
   toast(`🎤 Hát “${s.title}”, muốn bài khác thì bấm 🎵 Đổi bài`);
 }
 
-// force: mở ngay cả khi vẫn đang giữ mic (vừa gửi mic-leave để đổi bài, server chưa kịp báo lại).
+// force: mở cả khi đang cầm mic, để đổi bài (bài đang hát vẫn phát tới khi chọn xong).
 function openSongPicker(force = false) {
   if (!force && mic.singer === myId) return;
   if (!force && inMicQueue()) return toast('Bạn đang xếp hàng rồi, chờ tới lượt nhé!');
-  $('song-hint').textContent = features.ytSearch
-    ? 'Chọn bài là có video karaoke kèm lời chạy chữ.'
-    : 'Bài có 🎬 sẽ phát video karaoke. Bài khác dùng beat tự chế, hoặc dán link YouTube karaoke ở trên.';
+  $('song-hint').textContent = 'Gõ tên bài rồi bấm 🔎 Tìm trên YouTube. Muốn bản có lời chạy chữ thì gõ thêm chữ "karaoke".';
   $('song-search').value = '';
-  $('song-url').value = '';
+  ytQuery = '';
   renderSongs();
   openModal('songs');
 }
@@ -2645,7 +2697,7 @@ function renderSongs() {
     const b = document.createElement('button');
     b.textContent = g;
     b.className = g === songGenre ? 'on' : '';
-    b.onclick = () => { songGenre = g; renderSongs(); };
+    b.onclick = () => { songGenre = g; ytQuery = ''; renderSongs(); };
     genres.appendChild(b);
   }
   const q = fold($('song-search').value.trim());
@@ -2668,22 +2720,78 @@ function renderSongs() {
     b.onclick = () => joinMic({ song: s.id }, s.title);
     list.appendChild(b);
   }
-  if (!songs.length) list.innerHTML = '<p class="small">Không có bài nào khớp. Dán link YouTube ở dưới nhé!</p>';
+  if (!songs.length) list.innerHTML = '<p class="small">Không có bài nào khớp. Bấm 🔎 Tìm trên YouTube nhé!</p>';
+}
+
+// Tìm trên YouTube qua server cơ sở (server lọc sẵn video cho phép chiếu trên màn hình sân khấu).
+// Tìm đúng câu người chơi gõ (bài gốc, MV, remix…); muốn bản karaoke thì gõ thêm chữ "karaoke".
+let ytQuery = '';
+function searchYouTube() {
+  const q = $('song-search').value.trim();
+  if (!q) {
+    $('song-search').focus();
+    return toast('Gõ tên bài hoặc ca sĩ vào ô tìm kiếm trước nhé');
+  }
+  if (parseYouTube(q)) return joinMic({ url: q }, 'bài tự chọn'); // dán thẳng link YouTube vẫn hát được
+  if (!net.online) return toast('Cần kết nối với quán mới tìm được trên YouTube');
+  ytQuery = q;
+  send({ t: 'yt-search', q });
+  $('btn-yt-search').disabled = true;
+  $('song-list').innerHTML = '<p class="small">🔎 Đang tìm trên YouTube…</p>';
+}
+function renderYouTube(m) {
+  $('btn-yt-search').disabled = false;
+  if (modal !== 'songs' || m.q !== ytQuery) return; // đã đóng hoặc đã tìm câu khác
+  const list = $('song-list');
+  list.innerHTML = '';
+  const head = document.createElement('div');
+  head.className = 'yt-head';
+  const label = document.createElement('span');
+  label.textContent = `Kết quả YouTube cho “${m.q}”`;
+  const back = document.createElement('button');
+  back.textContent = '‹ Danh sách bài';
+  back.onclick = () => { ytQuery = ''; renderSongs(); };
+  head.append(label, back);
+  list.appendChild(head);
+  if (!m.items.length) {
+    const p = document.createElement('p');
+    p.className = 'small';
+    p.textContent = m.error ? 'Không tìm được lúc này, thử lại sau nhé.' : 'Không thấy video nào chiếu được, thử gõ khác đi xem.';
+    list.appendChild(p);
+    return;
+  }
+  for (const v of m.items) {
+    const b = document.createElement('button');
+    b.className = 'song yt';
+    const img = document.createElement('img');
+    img.src = `https://i.ytimg.com/vi/${v.id}/mqdefault.jpg`;
+    img.alt = '';
+    img.loading = 'lazy';
+    const info = document.createElement('span');
+    const t = document.createElement('b');
+    t.textContent = v.title;
+    const by = document.createElement('small');
+    by.textContent = [v.channel, v.duration].filter(Boolean).join(' · ');
+    info.append(t, by);
+    b.append(img, info);
+    b.onclick = () => joinMic({ url: v.id }, v.title);
+    list.appendChild(b);
+  }
 }
 
 function joinMic(payload, title) {
-  send({ t: 'mic-join', ...payload });
+  const change = mic.singer === myId;
+  send({ t: 'mic-join', ...payload, change });
   closeModal();
-  toast(`Đã xếp hàng hát “${title}” 🎤`);
+  toast(change ? `🎵 Đổi sang “${title}”` : `Đã xếp hàng hát “${title}” 🎤`);
 }
 
-$('song-search').addEventListener('input', renderSongs);
+$('song-search').addEventListener('input', () => { ytQuery = ''; renderSongs(); });
+$('song-search').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); searchYouTube(); }
+});
+$('btn-yt-search').onclick = searchYouTube;
 $('btn-songs-close').onclick = closeModal;
-$('btn-song-url').onclick = () => {
-  const url = $('song-url').value.trim();
-  if (!parseYouTube(url)) return toast('Link YouTube không hợp lệ');
-  joinMic({ url }, 'bài tự chọn');
-};
 
 // ================= Trạng thái =================
 const state = {
@@ -2966,8 +3074,11 @@ function onMessage(m) {
         a.dancing = m.k === 'dance';
         if (a.dancing) speak(a, '💃 nhảy nào!', 1800);
       } else {
-        playAct(a, m.k);
-        if (m.k === 'cheers') tableCheers(a);
+        if (m.k === 'cheers') {
+          dzoCount(a);
+          cheersLater(a);
+          tableCheers(a);
+        } else playAct(a, m.k);
       }
       break;
     }
@@ -3048,6 +3159,10 @@ function onMessage(m) {
     }
     case 'notice':
       toast(m.msg);
+      if (modal === 'songs') $('btn-yt-search').disabled = false;
+      break;
+    case 'yt-results':
+      renderYouTube(m);
       break;
     case 'invite': {
       const a = remotes.get(m.id);
@@ -3085,6 +3200,7 @@ function onMessage(m) {
 
 let playingKey = '';
 function setMic(m) {
+  const wasSinging = mic.singer === myId;
   mic = {
     singer: m.singer ?? null, queue: m.queue || [], startAt: m.startAt || 0, endsAt: m.endsAt || 0,
     song: m.song || 0, track: m.track || null,
@@ -3109,7 +3225,7 @@ function setMic(m) {
       cam.yaw = -Math.PI / 2;
       cam.pitch = 0.15;
       cam.dist = Math.max(cam.dist, 4);
-      toast(`🎤 Đến lượt bạn: ${mic.track?.title || 'hát đi nào'}!`);
+      toast(wasSinging ? `🎵 Đang hát: ${mic.track?.title || 'bài mới'}` : `🎤 Đến lượt bạn: ${mic.track?.title || 'hát đi nào'}!`);
     } else if (singer) {
       speak(singer, `🎤 ${mic.track?.title || 'lên hát đây!'}`, 3000);
     }
@@ -3147,7 +3263,7 @@ function renderMicBar() {
     b.onclick = () => send({ t: 'mic-leave' });
     const change = document.createElement('button');
     change.textContent = '🎵 Đổi bài';
-    change.onclick = () => { send({ t: 'mic-leave' }); openSongPicker(true); };
+    change.onclick = () => openSongPicker(true); // bài cũ phát tiếp tới khi chọn xong bài mới
     bar.append(change, b);
   }
 }
@@ -3513,7 +3629,7 @@ function updateWading() {
   }
   inWater = wet;
 }
-let lastWhere = '', heardFloor = -1; // heardFloor: tầng lúc cập nhật âm lượng karaoke gần nhất
+let lastWhere = '', heardKey = ''; // heardKey: tầng + độ xa phía biển lúc cập nhật âm lượng gần nhất
 function updateVisibility() {
   const f = meA?.f ?? 0;
   const inside = !!meA && state.started && (f > 0 || meA.rz < BUILDING.maxZ - 0.1);
@@ -3573,6 +3689,8 @@ function cheers() {
   refill();
   sendAct('cheers');
   onAnyAct(meA, 'cheers');
+  dzoCount(meA);
+  dzoCallSound();
   drinkUp();
   tableCheers(meA);
 }
@@ -3584,7 +3702,7 @@ function tableCheers(by) {
   for (const o of [...allActors(), ...npcs]) {
     if (o === by || o.seat?.table !== table) continue;
     if (o === meA) joinCheers();
-    else playAct(o, 'cheers');
+    else cheersLater(o);
   }
   if (table === chuBaTable.id) setTimeout(() => speak(chuBa, pick(LINES.chuBaCheers)), 200);
 }
@@ -3600,14 +3718,19 @@ function refill() {
   send({ t: 'refill' });
   pourSound();
 }
+// Chờ hô xong mới nâng ly uống.
 function drinkUp() {
   const T = TABLES[meA.seat.table];
-  playAct(meA, 'cheers');
-  setTimeout(() => clinkSound(), 400);
-  const from = state.fill;
+  const wait = dzoWait(), from = state.fill, dur = wait + 2.1;
+  let raised = false;
   busy = {
-    t: 0, dur: 2.1,
-    tick: (k) => setFill(from * (1 - clamp((k - 0.45) / 0.45, 0, 1))),
+    t: 0, dur,
+    tick: (k) => {
+      const d = (k * dur - wait) / 2.1;
+      if (d < 0) return;
+      if (!raised) { raised = true; playAct(meA, 'cheers'); clinkSound(); }
+      setFill(from * (1 - clamp((d - 0.45) / 0.45, 0, 1)));
+    },
     done: () => {
       state.cheers++;
       // Có mồi trên bàn thì ngấm chậm hơn.
@@ -3726,7 +3849,7 @@ function openMenu() {
 function onAnyAct(a, k) {
   if (k === 'cheers') {
     if (golden.active) golden.count++;
-    if (a !== meA && meA.seat && a.seat?.table === meA.seat.table) setTimeout(() => clinkSound(0.7), 400);
+    if (a !== meA && meA.seat && a.seat?.table === meA.seat.table) dzoCallSound(0.7);
   }
   if (k === 'clap' && a !== meA && Math.hypot(a.rx - meA.rx, a.rz - meA.rz) < 8) clapSound();
 }
@@ -4265,6 +4388,7 @@ $('btn-enter').onclick = () => {
   net.full = false;
   $('hud').classList.remove('hidden');
   if (!audio) startAmbience();
+  loadDzo(); // tải sẵn tiếng hô dzô
   startBgm();
   ac().resume();
   closeModal();
@@ -4425,7 +4549,9 @@ let lastFilter = '';
 function updateMe(dt, t) {
   if (!meA) return;
   if (busy) {
-    busy.t += dt;
+    // Tính theo đồng hồ thật để động tác khớp với tiếng hô dzô, kể cả khi máy chậm, tụt khung hình.
+    busy.start ??= performance.now();
+    busy.t = (performance.now() - busy.start) / 1000;
     const k = Math.min(1, busy.t / busy.dur);
     busy.tick?.(k);
     if (k >= 1) {
@@ -4788,8 +4914,9 @@ function loop() {
     updateMe(dt, t);
     updateWC();
     updateWading();
-    if (meA.f !== heardFloor) {
-      heardFloor = meA.f;
+    const hk = `${meA.f}:${Math.round(beachAway() * 20)}`;
+    if (hk !== heardKey) {
+      heardKey = hk;
       applyVolumes();
       syncVideo();
     }
@@ -4819,4 +4946,4 @@ function loop() {
 loop();
 
 // Dùng cho kiểm thử trong console
-window.__nhau = { state, rideElevator, cam, audioInfo: () => ({ bgmStep: BGM.step, music: buses.music?.gain.value, ctx: audio?.state }), get me() { return meA; }, walkTo, findPath, get localPlaying() { return !!local.src && { t: +(audio.currentTime - local.at).toFixed(1), dur: +local.buf.duration.toFixed(1), gain: +local.gain.gain.value.toFixed(2) }; }, remotes, TABLES, send, pour, cheers, emote, get mic() { return mic; }, tv, screenVideoEl };
+window.__nhau = { state, openSongPicker, rideElevator, cam, audioInfo: () => ({ bgmStep: BGM.step, music: buses.music?.gain.value, karaoke: buses.karaoke?.gain.value, video: tv.player?.getVolume?.(), ctx: audio?.state }), get me() { return meA; }, walkTo, findPath, get localPlaying() { return !!local.src && { t: +(audio.currentTime - local.at).toFixed(1), dur: +local.buf.duration.toFixed(1), gain: +local.gain.gain.value.toFixed(2) }; }, remotes, TABLES, send, pour, cheers, emote, get mic() { return mic; }, tv, screenVideoEl, local, get audio() { return audio; }, DZO };

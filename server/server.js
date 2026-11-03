@@ -8,7 +8,7 @@ import {
   ROOMS, CAPACITY, TABLES, MENU, ACTS, SHIRTS, HAIRS, FLOOR_BOUNDS, STAGE,
   SONG_MS, MAX_SONG_MS, MIC_DELAY_MS, ROUND_COOLDOWN_MS, MAX_DISHES, CHAT_MAX, seatPos, nearestFreeSeat, tabTotal,
 } from '../shared/world.js';
-import { SONGS, parseYouTube } from '../shared/songs.js';
+import { SONGS, parseYouTube, YT_ID } from '../shared/songs.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.PORT) || 8000;
@@ -238,6 +238,12 @@ function pumpMic(room) {
     stand(room, singer);
     Object.assign(singer, { x: STAGE.singerX, z: STAGE.singerZ, f: STAGE.floor });
   }
+  startTrack(room);
+}
+
+// Bắt đầu (hoặc bắt đầu lại khi đổi bài) bài của người đang cầm mic.
+function startTrack(room) {
+  const mic = room.mic;
   mic.startAt = Date.now() + MIC_DELAY_MS;
   // Với video, người hát báo xong bài (mic-leave); đây chỉ là giới hạn trên.
   mic.endsAt = mic.startAt + (mic.track.yt ? MAX_SONG_MS : SONG_MS);
@@ -355,6 +361,19 @@ function handle(room, p, m) {
       send(o.ws, { t: 'invite-reply', id: p.id, ok: !!m.ok });
       break;
     }
+    case 'yt-search': {
+      if (typeof m.q !== 'string') return;
+      const q = m.q.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+      if (!q) return;
+      if (!cooldown(p, 'yt-search', 2000)) { send(p.ws, { t: 'notice', msg: 'Tìm chậm thôi, đợi chút rồi tìm tiếp nhé' }); return; }
+      ytSearch(q)
+        .then((items) => send(p.ws, { t: 'yt-results', q: m.q, items }))
+        .catch((e) => {
+          console.error('ytSearch', e.message);
+          send(p.ws, { t: 'yt-results', q: m.q, items: [], error: true });
+        });
+      break;
+    }
     case 'room-lock':
       if (cooldown(p, 'lock', 500)) setRoomLock(room, p, m.locked);
       break;
@@ -428,9 +447,77 @@ async function searchKaraoke(song) {
   return found;
 }
 
+// ---------- Tìm bài trên YouTube ----------
+// Có YOUTUBE_API_KEY thì dùng API chính thức; không có thì đọc trang kết quả tìm kiếm của YouTube.
+// Chỉ trả video cho phép nhúng, vì video phải chiếu được trên màn hình sân khấu.
+const searchCache = new Map(); // câu tìm -> { at, items }
+const SEARCH_TTL = 30 * 60 * 1000;
+const YT_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+  'Accept-Language': 'vi-VN,vi;q=0.9,en;q=0.8',
+  Cookie: 'CONSENT=YES+cb; SOCS=CAI', // bỏ qua trang hỏi cookie ở châu Âu
+};
+
+// Tìm đúng câu người chơi gõ: ra cả bài gốc, MV, remix; muốn karaoke thì người chơi tự gõ thêm "karaoke".
+async function ytSearch(q) {
+  const key = q.toLowerCase();
+  const hit = searchCache.get(key);
+  if (hit && Date.now() - hit.at < SEARCH_TTL) return hit.items;
+  let items = YOUTUBE_API_KEY ? await apiSearch(q) : await pageSearch(q);
+  if (!YOUTUBE_API_KEY) {
+    const checks = await Promise.all(items.map((v) => checkVideo(v.id)));
+    items = items.filter((_, i) => checks[i].ok);
+  }
+  items = items.slice(0, 10);
+  if (searchCache.size > 300) searchCache.delete(searchCache.keys().next().value);
+  searchCache.set(key, { at: Date.now(), items });
+  return items;
+}
+
+async function apiSearch(query) {
+  const url = 'https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoEmbeddable=true'
+    + `&maxResults=12&regionCode=VN&relevanceLanguage=vi&q=${encodeURIComponent(query)}&key=${YOUTUBE_API_KEY}`;
+  const r = await fetch(url, { signal: AbortSignal.timeout(6000) });
+  if (!r.ok) throw new Error(`YouTube API ${r.status}`);
+  return ((await r.json()).items || []).map((it) => ({
+    id: it.id?.videoId, title: decodeEntities(it.snippet?.title || ''), channel: it.snippet?.channelTitle || '', duration: '',
+  })).filter((v) => YT_ID.test(v.id || ''));
+}
+
+async function pageSearch(query) {
+  // sp=EgIQAQ%3D%3D: chỉ lấy video (bỏ kênh, playlist)
+  const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=EgIQAQ%253D%253D&hl=vi&gl=VN`;
+  const r = await fetch(url, { headers: YT_HEADERS, signal: AbortSignal.timeout(7000) });
+  if (!r.ok) throw new Error(`YouTube ${r.status}`);
+  return parseResultsPage(await r.text()).slice(0, 14);
+}
+
+function parseResultsPage(html) {
+  const m = html.match(/(?:var ytInitialData|window\["ytInitialData"\])\s*=\s*(\{.+?\});\s*<\/script>/s);
+  if (!m) return [];
+  let data;
+  try { data = JSON.parse(m[1]); } catch { return []; }
+  const out = [], seen = new Set();
+  const text = (t) => t?.simpleText ?? (t?.runs || []).map((x) => x.text).join('') ?? '';
+  (function walk(o) {
+    if (!o || typeof o !== 'object' || out.length >= 20) return;
+    const v = o.videoRenderer;
+    if (v && YT_ID.test(v.videoId || '') && !seen.has(v.videoId) && v.lengthText) { // không có lengthText là đang livestream
+      seen.add(v.videoId);
+      out.push({ id: v.videoId, title: text(v.title), channel: text(v.ownerText || v.longBylineText), duration: text(v.lengthText) });
+    }
+    for (const k in o) walk(o[k]);
+  })(data);
+  return out;
+}
+
+const decodeEntities = (s) => s.replace(/&(amp|quot|#39|lt|gt);/g, (_, e) => ({ amp: '&', quot: '"', '#39': "'", lt: '<', gt: '>' })[e]);
+
 async function joinMic(room, p, m) {
   const mic = room.mic;
-  if (mic.singer === p.id || mic.queue.some((q) => q.id === p.id) || p.micPending) return;
+  // change: người đang hát chọn bài khác; bài cũ vẫn phát tới khi bài mới sẵn sàng.
+  const change = !!m.change && mic.singer === p.id;
+  if ((mic.singer === p.id && !change) || mic.queue.some((q) => q.id === p.id) || p.micPending) return;
   p.micPending = true;
   let track = null;
   try {
@@ -450,7 +537,15 @@ async function joinMic(room, p, m) {
     p.micPending = false;
   }
   // Có thể người chơi đã rời quán trong lúc chờ tìm video.
-  if (room.players.get(p.id) !== p || mic.singer === p.id || mic.queue.some((q) => q.id === p.id)) return;
+  if (room.players.get(p.id) !== p) return;
+  if (change) {
+    if (mic.singer !== p.id) return; // vừa hết bài hoặc rời mic trong lúc chờ
+    mic.track = track;
+    startTrack(room);
+    broadcast(room, micState(room));
+    return;
+  }
+  if (mic.singer === p.id || mic.queue.some((q) => q.id === p.id)) return;
   mic.queue.push({ id: p.id, track });
   pumpMic(room);
   broadcast(room, micState(room));
