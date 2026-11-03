@@ -2059,6 +2059,8 @@ const saveSettings = () => { try { localStorage.setItem('nhau-settings', JSON.st
 // Mỗi loại âm thanh một kênh riêng để chỉnh âm lượng: nhạc nền, không gian, hiệu ứng, karaoke.
 let audio = null, master = null, muted = false;
 const buses = {};
+// iPhone: khai báo phiên âm thanh kiểu phát nhạc để nút gạt im lặng không tắt Web Audio (Safari 16.4+).
+if (navigator.audioSession) navigator.audioSession.type = 'playback';
 function ac() {
   if (!audio) {
     audio = new (window.AudioContext || window.webkitAudioContext)();
@@ -2151,6 +2153,13 @@ document.addEventListener('visibilitychange', () => {
   else if (!document.hidden) audio.resume();
   syncVideo();
 });
+// Điện thoại chỉ cho bật âm thanh trong lúc người dùng chạm: khoá màn hình/chuyển app quay lại mà âm thanh
+// còn dừng ("suspended" / iOS "interrupted") thì lần chạm kế tiếp bật lại.
+for (const ev of ['pointerdown', 'touchend', 'keydown']) {
+  addEventListener(ev, () => {
+    if (audio && audio.state !== 'running' && !(document.hidden && !settings.bgPlay)) audio.resume();
+  }, { passive: true });
+}
 function noiseBuffer(sec, brown) {
   const a = ac(), len = a.sampleRate * sec, buf = a.createBuffer(1, len, a.sampleRate), d = buf.getChannelData(0);
   let last = 0;
@@ -2285,9 +2294,9 @@ function loadYT() {
 
 const tv = { player: null, yt: null, startAt: 0, failed: false, local: false, localMute: false, fallbackTimer: null };
 
-// Bản nhạc có sẵn trên máy (public/music, đã gitignore, không lên GitHub/Vercel): có file thì phát file
-// thay cho video YouTube cùng ID. Bản web không có file nên vẫn dùng YouTube.
-// Phát bằng Web Audio: file tải từ YouTube thường là mảnh DASH, thẻ <audio> không đọc được nhưng decodeAudioData thì được.
+// Bài có file nhạc riêng trong public/music (chủ quán đã mua bản quyền): phát file thay cho video YouTube cùng ID.
+// Không tải được file (thiếu file, mất mạng) thì quay về video YouTube. Phát bằng Web Audio để khớp giờ server
+// và chỉnh âm lượng theo tầng như các âm thanh khác.
 const LOCAL_AUDIO = { t08wq1Dhsho: '/music/det-mong-uyen-uong.m4a' };
 const localBuffers = {}; // yt -> Promise<AudioBuffer | null>
 function localBuffer(yt) {
