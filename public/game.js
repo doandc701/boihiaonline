@@ -2258,6 +2258,8 @@ const out = (bus = 'sfx') => (ac(), buses[bus]);
 const KARAOKE_FLOOR_LEVEL = { 2: 1, 1: 0.4, 0: 0.15 };
 // Ra biển: qua khỏi vỉa hè thì karaoke nhỏ dần, tới bãi biển (tường kè) thì tắt hẳn, nhường lại nhạc nền.
 const beachAway = () => (meA?.f === 0 ? THREE.MathUtils.clamp((meA.z - SHORE.curbZ) / (SHORE.wallZ - SHORE.curbZ), 0, 1) : 0);
+// Ra khỏi quán (bước xuống lòng đường): 0 khi còn ở vỉa hè/trong quán, lên 1 sau khoảng 1,5 m.
+const leftQuan = () => (meA?.f === 0 ? THREE.MathUtils.clamp((meA.z - SHORE.curbZ) / 1.5, 0, 1) : 0);
 const karaokeLevel = () => (mic.singer && meA ? (KARAOKE_FLOOR_LEVEL[meA.f] ?? 0) * (1 - beachAway()) : 0);
 function applyVolumes() {
   if (!audio) return;
@@ -2265,8 +2267,8 @@ function applyVolumes() {
   buses.ambience.gain.setTargetAtTime(settings.ambience / 100, t, 0.05);
   buses.sfx.gain.setTargetAtTime(settings.sfx / 100, t, 0.05);
   buses.karaoke.gain.setTargetAtTime((settings.karaoke / 100) * karaokeLevel(), t, 0.3);
-  // Có người hát thì nhạc nền cả quán nhỏ dần rồi tắt; càng ra xa phía biển thì nhạc nền càng to lại.
-  const bgm = mic.singer ? beachAway() : 1;
+  // Trong quán có người hát thì nhạc nền tắt; bước ra khỏi quán là nhạc nền phát lại.
+  const bgm = mic.singer ? leftQuan() : 1;
   buses.music.gain.setTargetAtTime((settings.music / 100) * 0.9 * bgm, t, bgm < 1 ? 0.6 : 1.2);
 }
 
@@ -4914,7 +4916,7 @@ function loop() {
     updateMe(dt, t);
     updateWC();
     updateWading();
-    const hk = `${meA.f}:${Math.round(beachAway() * 20)}`;
+    const hk = `${meA.f}:${Math.round(beachAway() * 20)}:${Math.round(leftQuan() * 10)}`;
     if (hk !== heardKey) {
       heardKey = hk;
       applyVolumes();
