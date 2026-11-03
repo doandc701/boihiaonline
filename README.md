@@ -1,4 +1,4 @@
-# Nhậu Online 🍻 · Bơi Hia Dứt Cạn
+# Bơi Hia Dứt Cạn 🍻
 
 Quán nhậu 3D trên web, nhiều người thật ngồi chung bàn. Ngoài quán giao tiếp bằng hành động (dzô, rót, vẫy chào, vỗ tay, mời ly). Ngồi chung bàn thì chat được với nhau.
 

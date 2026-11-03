@@ -3,10 +3,61 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
-  <meta name="theme-color" content="#0b1020">
+  <meta name="theme-color" content="#24150a">
   <meta name="color-scheme" content="dark light">
-  <meta name="description" content="Quán nhậu online: ngồi chung bàn với người thật, không cần nói gì, chỉ cần dzô.">
-  <title>Nhậu Online</title>
+  <title>Bơi Hia Dứt Cạn · Quán nhậu 3D online bên biển</title>
+  <meta name="description" content="Quán nhậu 3D online bên biển: ngồi chung bàn với người thật, gọi mồi, hát karaoke, nhảy trên sân thượng và cùng nhau 1-2-3 dzô! Chơi miễn phí ngay trên trình duyệt.">
+  <meta name="keywords" content="nhậu online, quán nhậu online, bia hơi, game 3D, karaoke online, chơi cùng bạn bè, Bơi Hia Dứt Cạn">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <meta name="author" content="Bơi Hia Dứt Cạn">
+  <link rel="canonical" href="https://boihiaonline.vercel.app/">
+
+  <!-- Icon -->
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="application-name" content="Bơi Hia Dứt Cạn">
+  <meta name="apple-mobile-web-app-title" content="Bơi Hia Dứt Cạn">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+  <!-- Chia sẻ mạng xã hội (Facebook, Zalo, Messenger, X) -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Bơi Hia Dứt Cạn">
+  <meta property="og:locale" content="vi_VN">
+  <meta property="og:url" content="https://boihiaonline.vercel.app/">
+  <meta property="og:title" content="Bơi Hia Dứt Cạn · Quán nhậu 3D online bên biển">
+  <meta property="og:description" content="Ngồi chung bàn với người thật, gọi mồi, hát karaoke và cùng nhau 1-2-3 dzô! 🍻">
+  <meta property="og:image" content="https://boihiaonline.vercel.app/og-image.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Biển hiệu Bơi Hia Dứt Cạn cạnh cốc vại bia hơi">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Bơi Hia Dứt Cạn · Quán nhậu 3D online bên biển">
+  <meta name="twitter:description" content="Ngồi chung bàn với người thật, gọi mồi, hát karaoke và cùng nhau 1-2-3 dzô! 🍻">
+  <meta name="twitter:image" content="https://boihiaonline.vercel.app/og-image.jpg">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "VideoGame",
+    "name": "Bơi Hia Dứt Cạn",
+    "alternateName": "Quán nhậu 3D online",
+    "url": "https://boihiaonline.vercel.app/",
+    "image": "https://boihiaonline.vercel.app/og-image.jpg",
+    "description": "Quán nhậu 3D online bên biển: ngồi chung bàn với người thật, gọi mồi, hát karaoke và cùng nhau 1-2-3 dzô.",
+    "inLanguage": "vi",
+    "genre": ["Social", "Casual", "Simulation"],
+    "playMode": "MultiPlayer",
+    "gamePlatform": "Web browser",
+    "applicationCategory": "Game",
+    "operatingSystem": "Any",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "VND" }
+  }
+  </script>
   <script>
     // Sáng/tối theo giờ Việt Nam (6h–18h là ban ngày), đặt sớm để không nháy màu
     { const h = ((Date.now() / 3600000 + 7) % 24); document.documentElement.dataset.theme = h >= 6 && h < 18 ? 'light' : 'dark'; }
@@ -44,6 +95,13 @@
   </style>
 </head>
 <body>
+  <noscript>
+    <main style="max-width:36rem;margin:3rem auto;padding:0 1rem;font-family:system-ui,sans-serif;line-height:1.7;color:#ffe9b0">
+      <h1>Bơi Hia Dứt Cạn · Quán nhậu 3D online bên biển</h1>
+      <p>Ngồi chung bàn với người thật, gọi mồi, hát karaoke, nhảy trên sân thượng và cùng nhau 1-2-3 dzô.</p>
+      <p>Bật JavaScript trong trình duyệt để vào quán nhé.</p>
+    </main>
+  </noscript>
   <!-- Màn chờ: rót bia hơi theo tiến độ tải -->
   <div id="boot" role="status" aria-live="polite">
     <div class="boot-sign">Bơi Hia Dứt Cạn<small>Đã Vào Là Dứt · Đã Uống Là Cạn</small></div>
@@ -150,7 +208,7 @@
   <div id="overlay-start" class="overlay">
     <div class="panel start">
       <div class="start-head">
-        <h1>🍻 Nhậu Online</h1>
+        <h1>🍻 Bơi Hia Dứt Cạn</h1>
         <p class="sub">Quán nhậu nơi mọi người ngồi chung bàn. Không cần nói gì, chỉ cần <b>dzô</b>.</p>
       </div>
 

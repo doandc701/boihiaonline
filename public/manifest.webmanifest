@@ -1,0 +1,16 @@
+{
+  "name": "Bơi Hia Dứt Cạn · Quán nhậu 3D online",
+  "short_name": "Bơi Hia Dứt Cạn",
+  "description": "Quán nhậu 3D online bên biển: ngồi chung bàn với người thật, gọi mồi, hát karaoke, 1-2-3 dzô!",
+  "lang": "vi",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#24150a",
+  "theme_color": "#24150a",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

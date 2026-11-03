@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://boihiaonline.vercel.app/sitemap.xml

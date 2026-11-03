@@ -1,4 +1,4 @@
-// Server Nhậu Online: phục vụ file tĩnh + WebSocket realtime cho từng quán.
+// Server Bơi Hia Dứt Cạn: phục vụ file tĩnh + WebSocket realtime cho từng quán.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -46,6 +46,10 @@ const MIME = {
   '.png': 'image/png',
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
+  '.jpg': 'image/jpeg',
+  '.webmanifest': 'application/manifest+json',
+  '.txt': 'text/plain; charset=utf-8',
+  '.xml': 'application/xml; charset=utf-8',
 };
 
 // ---------- File tĩnh ----------
@@ -536,4 +540,4 @@ if (DEV) {
 }
 
 if (!rooms.size) throw new Error(`ROOMS=${process.env.ROOMS} không khớp cơ sở nào trong shared/world.js`);
-server.listen(PORT, () => console.log(`🍻 Nhậu Online đang mở cửa: http://localhost:${PORT} · ${[...rooms.keys()].join(', ')}${DEV ? '  (dev: sửa file là tự cập nhật)' : ''}`));
+server.listen(PORT, () => console.log(`🍻 Bơi Hia Dứt Cạn đang mở cửa: http://localhost:${PORT} · ${[...rooms.keys()].join(', ')}${DEV ? '  (dev: sửa file là tự cập nhật)' : ''}`));

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd54a"/>
+      <stop offset="1" stop-color="#f2a900"/>
+    </linearGradient>
+    <linearGradient id="beer" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffc93c"/>
+      <stop offset="1" stop-color="#e08a00"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <!-- quai cốc -->
+  <path d="M352 196h34a46 46 0 0 1 46 46v58a46 46 0 0 1-46 46h-34" fill="none" stroke="#b71c1c" stroke-width="30" stroke-linecap="round"/>
+  <!-- bia trong cốc -->
+  <path d="M112 168h248l-14 226a34 34 0 0 1-34 32H160a34 34 0 0 1-34-32z" fill="url(#beer)" stroke="#b71c1c" stroke-width="22" stroke-linejoin="round"/>
+  <!-- gân cốc -->
+  <g stroke="#ffffff" stroke-opacity=".45" stroke-width="12" stroke-linecap="round">
+    <path d="M178 210v170M236 210v170M294 210v170"/>
+  </g>
+  <!-- bọt bia -->
+  <path d="M96 176c-12-46 34-78 70-58 14-38 72-46 96-12 30-26 84-10 88 34 30 6 36 44 10 58H112c-10 0-14-10-16-22z" fill="#fffbe8" stroke="#b71c1c" stroke-width="20" stroke-linejoin="round"/>
+</svg>

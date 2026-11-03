@@ -1,4 +1,4 @@
-// Nhậu Online — quán nhậu 3D nhiều người: ngồi chung bàn, không chat, chỉ có hành động.
+// Bơi Hia Dứt Cạn — quán nhậu 3D nhiều người: ngồi chung bàn, không chat, chỉ có hành động.
 import * as THREE from 'three';
 window.__boot?.(65, 'Đang dựng quán…');
 import {
