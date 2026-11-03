@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1020">
+  <meta name="color-scheme" content="dark light">
+  <meta name="description" content="Quán nhậu online: ngồi chung bàn với người thật, không cần nói gì, chỉ cần dzô.">
+  <title>Nhậu Online</title>
+  <script>
+    // Sáng/tối theo giờ Việt Nam (6h–18h là ban ngày), đặt sớm để không nháy màu
+    { const h = ((Date.now() / 3600000 + 7) % 24); document.documentElement.dataset.theme = h >= 6 && h < 18 ? 'light' : 'dark'; }
+  </script>
+  <link rel="stylesheet" href="game.css">
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <div id="tags"></div>
+
+  <!-- HUD -->
+  <div id="hud" class="hidden">
+    <div class="top-left">
+      <button id="btn-people" class="chip">👥 <span id="people-count">1</span> người · <span id="room-name"></span></button>
+      <div class="meter">
+        <span>Độ say</span>
+        <div class="bar"><div id="drunk-bar"></div></div>
+        <span id="drunk-label">Tỉnh táo</span>
+      </div>
+      <div id="where" class="small"></div>
+      <div id="clock" class="small"></div>
+      <div id="golden-timer" class="small"></div>
+      <button id="btn-lock" class="chip hidden"></button>
+    </div>
+    <div class="top-right">
+      <button id="btn-donate" class="icon donate-icon" title="Bao chủ quán một ly">🍺</button>
+      <button id="btn-settings" class="icon" title="Cài đặt">⚙️</button>
+      <button id="btn-sound" class="icon" title="Bật/tắt âm thanh">🔊</button>
+      <button id="btn-bill" class="icon" title="Tính tiền (B)">💸</button>
+      <button id="btn-leave" class="icon" title="Về nhà">🚪</button>
+    </div>
+
+    <div id="mic-bar" class="mic-bar hidden"></div>
+    <div id="prompt" class="prompt hidden"></div>
+    <div id="golden" class="golden hidden"></div>
+
+    <div class="action-bar">
+      <button data-act="cheers" title="Dzô (1 / Space)"><kbd>1</kbd><b>🥂</b><span>Dzô</span></button>
+      <button data-act="pour" title="Rót (2 / R)"><kbd>2</kbd><b>🍺</b><span>Rót</span></button>
+      <button data-act="wave" title="Vẫy chào (3)"><kbd>3</kbd><b>👋</b><span>Chào</span></button>
+      <button data-act="clap" title="Vỗ tay (4)"><kbd>4</kbd><b>👏</b><span>Vỗ tay</span></button>
+      <button data-act="menu" title="Gọi mồi (5 / M)"><kbd>5</kbd><b>📜</b><span>Gọi mồi</span></button>
+      <button data-act="water" title="Nước lọc (6 / N)"><kbd>6</kbd><b>💧</b><span>Nước lọc</span></button>
+      <button data-act="dance" id="btn-dance" class="hidden" title="Nhảy theo nhạc (7)"><kbd>7</kbd><b>💃</b><span>Nhảy</span></button>
+      <button data-act="stand" id="btn-stand" class="hidden" title="Đứng dậy (E)"><kbd>E</kbd><b>🚶</b><span>Đứng dậy</span></button>
+    </div>
+
+    <div id="chat" class="chat hidden">
+      <div id="chat-log" class="chat-log"></div>
+      <form id="chat-form" autocomplete="off">
+        <input id="chat-input" maxlength="140" placeholder="Enter để chat với cả bàn · E đứng dậy">
+        <button type="submit">Gửi</button>
+      </form>
+    </div>
+
+    <aside id="people-panel" class="side hidden">
+      <h3>Người trong quán</h3>
+      <p class="small">Đây là người thật đang ngồi cùng bạn.</p>
+      <ul id="people-list"></ul>
+    </aside>
+  </div>
+
+  <!-- Màn bắt đầu -->
+  <div id="overlay-start" class="overlay">
+    <div class="panel start">
+      <div class="start-head">
+        <h1>🍻 Nhậu Online</h1>
+        <p class="sub">Quán nhậu nơi mọi người ngồi chung bàn. Không cần nói gì, chỉ cần <b>dzô</b>.</p>
+      </div>
+
+      <div class="start-grid">
+        <div class="preview">
+          <canvas id="preview" aria-label="Xem trước nhân vật"></canvas>
+          <span id="preview-name" class="preview-name">Khách</span>
+          <span class="preview-hint">Kéo để xoay</span>
+        </div>
+        <div>
+          <label class="field">Tên bạn <input id="player-name" maxlength="20" placeholder="Tuấn Hói" autocomplete="nickname"></label>
+          <div class="field">Áo <div id="shirt-picker" class="swatches"></div></div>
+          <div class="field">Kiểu <div id="hair-picker" class="seg"></div>
+            <label class="belly"><input id="belly" type="checkbox"> Bụng bia</label></div>
+          <div class="field">Chọn cơ sở <div id="room-list" class="rooms"><span class="small">Đang xem cơ sở nào còn chỗ…</span></div></div>
+        </div>
+      </div>
+      <p id="start-msg" class="small warn"></p>
+
+      <button id="btn-enter" class="big">🚪 Vào quán</button>
+
+      <details class="controls">
+        <summary>Cách chơi</summary>
+        <ul id="controls-list">
+          <li><b>Click sàn</b> hoặc <b>WASD</b> để đi · <b>kéo</b> để xoay · <b>lăn chuột</b> để zoom</li>
+          <li><b>Click bàn</b> (hoặc <b>E</b>) để ngồi vào ghế trống</li>
+          <li>Ngồi rồi: <b>1</b> dzô · <b>2</b> rót · <b>5</b> gọi mồi · <b>6</b> nước lọc · <b>B</b> tính tiền</li>
+          <li><b>3</b> vẫy chào · <b>4</b> vỗ tay · click người khác để <b>mời một ly</b></li>
+          <li>Lên <b>sân khấu karaoke</b> xếp hàng hát. Mỗi 10 phút có <b>giờ vàng</b>, cả quán cùng dzô</li>
+        </ul>
+      </details>
+      <p class="row-btns"><button id="btn-start-settings" class="ghost">⚙️ Cài đặt âm thanh & hiển thị</button></p>
+      <p id="stats" class="small"></p>
+      <p class="row-btns"><button id="btn-start-donate" class="donate-btn">🍺 Bao chủ quán một ly</button></p>
+    </div>
+  </div>
+
+  <div id="overlay-menu" class="overlay hidden">
+    <div class="panel">
+      <h2>📜 Thực đơn</h2>
+      <p id="menu-target" class="sub"></p>
+      <div id="menu-items" class="menu-items"></div>
+      <button id="btn-round" class="round">🍻 Bao cả quán một két <small>(500.000đ ảo)</small></button>
+      <div class="row-btns">
+        <button id="btn-menu-bill" class="ghost">💸 Tính tiền</button>
+        <button id="btn-menu-close">Xong</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="overlay-songs" class="overlay hidden">
+    <div class="panel">
+      <h2>🎤 Chọn bài hát</h2>
+      <input id="song-search" class="search" placeholder="Tìm tên bài, ca sĩ…" autocomplete="off">
+      <div id="song-genres" class="seg wrap"></div>
+      <div id="song-list" class="song-list"></div>
+      <div class="paste">
+        <input id="song-url" placeholder="Hoặc dán link YouTube karaoke…" autocomplete="off">
+        <button id="btn-song-url">Hát bài này</button>
+      </div>
+      <p id="song-hint" class="small"></p>
+      <div class="row-btns"><button id="btn-songs-close" class="ghost">Đóng</button></div>
+    </div>
+  </div>
+
+  <!-- TV karaoke: phát video YouTube đồng bộ cho cả quán -->
+  <div id="tv" class="tv hidden">
+    <div class="tv-head">
+      <span id="tv-title"></span>
+      <button id="tv-sound" title="Tắt/bật tiếng video">🔊</button>
+      <button id="tv-toggle" title="Thu nhỏ/mở rộng">▁</button>
+    </div>
+    <div class="tv-body"><div id="tv-player"></div></div>
+  </div>
+
+  <div id="overlay-donate" class="overlay hidden">
+    <div class="panel donate-panel">
+      <button id="btn-donate-close" class="close-x" title="Đóng" aria-label="Đóng">✕</button>
+      <h2>🍺 Bao chủ quán một ly</h2>
+      <p class="sub">Cảm ơn bạn đã ghé quán và ủng hộ hào phóng! 🍻</p>
+      <div class="bank-card">
+        <div>
+          <small id="donate-bank"></small>
+          <b id="donate-account"></b>
+        </div>
+        <button id="btn-copy-account" class="ghost">📋 Sao chép</button>
+      </div>
+      <div class="qr-card">
+        <img src="donate-qr.png" alt="Mã VietQR chuyển khoản ngân hàng BIDV" width="421" height="520">
+        <small>Mở app ngân hàng, quét mã để chuyển khoản</small>
+      </div>
+      <p class="small">Tiền ủng hộ dùng để duy trì máy chủ và làm thêm nội dung cho quán. 🙏</p>
+    </div>
+  </div>
+
+  <div id="overlay-poem" class="overlay hidden">
+    <div class="panel poem-panel">
+      <h2 id="poem-title">📜 Thơ nhậu</h2>
+      <div id="poem-body" class="poem-body"></div>
+      <p class="poem-sign">— Bơi Hia Dứt Cạn —</p>
+      <div class="row-btns"><button id="btn-poem-close">Cạn ly rồi đi tiếp</button></div>
+    </div>
+  </div>
+
+  <div id="overlay-elevator" class="overlay hidden">
+    <div class="panel lift">
+      <h2 id="elevator-title">🛗 Thang máy</h2>
+      <p id="elevator-here" class="sub"></p>
+      <div id="elevator-floors" class="lift-floors"></div>
+      <div class="row-btns"><button id="btn-elevator-close" class="ghost">Thôi, đi bộ</button></div>
+    </div>
+  </div>
+
+  <div id="overlay-settings" class="overlay hidden">
+    <div class="panel settings">
+      <h2>⚙️ Cài đặt</h2>
+
+      <section>
+        <h3>🔊 Âm thanh</h3>
+        <label class="slider"><span>🎵 Nhạc nền quán</span><input type="range" min="0" max="100" step="5" data-set="music"><output></output></label>
+        <label class="slider"><span>🌊 Không gian (sóng, phố)</span><input type="range" min="0" max="100" step="5" data-set="ambience"><output></output></label>
+        <label class="slider"><span>🥂 Hiệu ứng (cụng ly, vỗ tay)</span><input type="range" min="0" max="100" step="5" data-set="sfx"><output></output></label>
+        <label class="slider"><span>🎤 Karaoke</span><input type="range" min="0" max="100" step="5" data-set="karaoke"><output></output></label>
+        <label class="toggle"><input type="checkbox" data-set="bgPlay"><span>Phát tiếp khi chuyển sang tab khác</span></label>
+        <p class="small">Nhạc nền tự tắt khi có người lên hát karaoke, hát xong thì bật lại.</p>
+      </section>
+
+      <section>
+        <h3>🖥 Hiển thị</h3>
+        <p class="small">🕒 Sáng/tối tự đổi theo giờ thật ở Việt Nam: 6h–18h là ban ngày, tối là ban đêm, có bình minh và hoàng hôn.</p>
+        <div class="field">Đồ hoạ <div id="quality-switch" class="seg" role="group" aria-label="Chất lượng đồ hoạ"></div></div>
+        <label class="toggle"><input type="checkbox" data-set="names"><span>Hiện tên mọi người trên đầu</span></label>
+      </section>
+
+      <details class="controls">
+        <summary>🎮 Cách chơi</summary>
+        <ul id="controls-copy"></ul>
+      </details>
+      <details class="controls">
+        <summary>🎼 Thông tin âm nhạc</summary>
+        <ul>
+          <li><b>Nhạc nền:</b> quán tự chơi bằng Web Audio (guitar, bass, pad, giai điệu ngũ cung sinh ngẫu nhiên). Không dùng bài hát có bản quyền.</li>
+          <li><b>Karaoke:</b> video phát từ YouTube, bản quyền thuộc chủ kênh. Không có video thì dùng beat tự chế.</li>
+          <li><b>Tiếng sóng, tiếng phố, hiệu ứng:</b> tổng hợp trực tiếp trong trình duyệt.</li>
+        </ul>
+      </details>
+
+      <div class="row-btns"><button id="btn-settings-close">Xong</button></div>
+    </div>
+  </div>
+
+  <div id="overlay-bill" class="overlay hidden">
+    <div class="panel">
+      <h2>🧾 Hoá đơn</h2>
+      <div id="bill"></div>
+      <div class="row-btns">
+        <button id="btn-bill-back" class="ghost">↩ Quay lại</button>
+        <button id="btn-again">🔁 Làm tăng 2</button>
+        <button id="btn-home" class="ghost">🏠 Về nhà</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="overlay-end" class="overlay hidden">
+    <div class="panel">
+      <h1>🛵 Về nhà an toàn nhé</h1>
+      <p class="sub">Đã uống rượu bia thì không lái xe.<br>Lúc nào buồn thì ghé quán ngồi tiếp.</p>
+      <button id="btn-return" class="big">Quay lại quán</button>
+    </div>
+  </div>
+
+  <div id="fade"></div>
+  <div id="toast"></div>
+
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+  </script>
+  <script type="module" src="game.js"></script>
+  <script>
+    // Chế độ dev: sửa file là trang tự tải lại; server khởi động lại (boot khác) cũng tải lại.
+    (() => {
+      if (!window.EventSource) return;
+      let boot = null;
+      const es = new EventSource('/__reload');
+      es.addEventListener('boot', (e) => { if (boot && boot !== e.data) location.reload(); boot = e.data; });
+      es.addEventListener('reload', () => location.reload());
+    })();
+  </script>
+</body>
+</html>

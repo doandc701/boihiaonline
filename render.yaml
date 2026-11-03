@@ -1,0 +1,48 @@
+# Render Blueprint: mỗi cơ sở là một server WebSocket riêng (gói free, Singapore cho gần VN).
+# Nếu Render đổi tên miền (vd. thêm hậu tố vì tên đã có người dùng), sửa lại `server` trong shared/world.js.
+services:
+  - type: web
+    name: boihia-quan-1
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /api/rooms
+    envVars:
+      - key: ROOMS
+        value: quan-1
+      - key: TRUST_PROXY
+        value: "1"
+      - key: ALLOWED_ORIGINS
+        value: https://boihiaonline.vercel.app
+  - type: web
+    name: boihia-quan-2
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /api/rooms
+    envVars:
+      - key: ROOMS
+        value: quan-2
+      - key: TRUST_PROXY
+        value: "1"
+      - key: ALLOWED_ORIGINS
+        value: https://boihiaonline.vercel.app
+  - type: web
+    name: boihia-quan-3
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /api/rooms
+    envVars:
+      - key: ROOMS
+        value: quan-3
+      - key: TRUST_PROXY
+        value: "1"
+      - key: ALLOWED_ORIGINS
+        value: https://boihiaonline.vercel.app
