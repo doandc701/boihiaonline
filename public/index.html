@@ -194,6 +194,7 @@
       <div class="chat-tabs" role="tablist" aria-label="Kênh chat">
         <button id="chat-tab-table" type="button" role="tab" data-scope="table">🪑 Bàn<i class="badge hidden"></i></button>
         <button id="chat-tab-all" type="button" role="tab" data-scope="all">🌏 Cả quán<i class="badge hidden"></i></button>
+        <button id="chat-toggle" type="button" class="chat-toggle" aria-expanded="false" title="Mở/thu gọn chat">💬 Chat<i class="badge hidden"></i></button>
       </div>
       <div id="chat-log" class="chat-log"></div>
       <div id="chat-log-all" class="chat-log hidden"></div>
@@ -285,14 +286,12 @@
     </div>
   </div>
 
-  <!-- TV karaoke: phát video YouTube đồng bộ cho cả quán -->
+  <!-- Thanh bài đang hát; video chiếu trên màn hình sân khấu (xem stageScreen trong game.js) -->
   <div id="tv" class="tv hidden">
     <div class="tv-head">
       <span id="tv-title"></span>
-      <button id="tv-sound" title="Tắt/bật tiếng video">🔊</button>
-      <button id="tv-toggle" title="Thu nhỏ/mở rộng">▁</button>
+      <button id="tv-sound" title="Tắt/bật tiếng bài hát">🔊</button>
     </div>
-    <div class="tv-body"><div id="tv-player"></div></div>
   </div>
 
   <div id="overlay-donate" class="overlay hidden">
@@ -427,7 +426,10 @@
   <div id="toast"></div>
 
   <script type="importmap">
-    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    } }
   </script>
   <script type="module" src="game.js" onerror="window.__bootFail?.('Không tải được quán. <b>Kiểm tra mạng</b> rồi rót lại nhé')"></script>
   <script>

@@ -1,5 +1,6 @@
 // Bơi Hia Dứt Cạn — quán nhậu 3D nhiều người: ngồi chung bàn, không chat, chỉ có hành động.
 import * as THREE from 'three';
+import { CSS3DRenderer, CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
 window.__boot?.(65, 'Đang dựng quán…');
 import {
   ROOMS, TABLES, STAGE, MENU, MENU_CATS, SHIRTS, HAIRS, SONG_MS, MIC_DELAY_MS,
@@ -55,7 +56,8 @@ const onStage = (a) => a.f === STAGE.floor && Math.abs(a.rx - STAGE.x) < STAGE.w
 
 // ================= Renderer & scene =================
 const canvas = $('game');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+// alpha: màn chiếu karaoke "đục lỗ" canvas để lộ video YouTube ở lớp CSS3D bên dưới.
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); // chỉnh lại theo cài đặt đồ hoạ ở applyQuality()
 renderer.setSize(innerWidth, innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -79,6 +81,7 @@ fitCamera();
 addEventListener('resize', () => {
   fitCamera();
   renderer.setSize(innerWidth, innerHeight);
+  cssRenderer.setSize(innerWidth, innerHeight);
 });
 
 // ---------- Hàm dựng hình ----------
@@ -1273,9 +1276,74 @@ const karaokeTex = canvasTexture(512, 128, (g, w, h) => {
   g.fillStyle = '#f8bbd0';
   g.fillText('KARAOKE', w / 2, h / 2);
 });
-const karaokeSign = add(new THREE.PlaneGeometry(2.6, 0.65), new THREE.MeshBasicMaterial({ map: karaokeTex }), STAGE.x + 1.8, 1.9, STAGE.z, F3);
+const karaokeSign = add(new THREE.PlaneGeometry(2.6, 0.65), new THREE.MeshBasicMaterial({ map: karaokeTex }), STAGE.x + 1.78, 2.75, STAGE.z, F3);
 karaokeSign.rotation.y = -Math.PI / 2;
 const stageLight = pointLight(F3, 0xe040fb, 0, 7, STAGE.x, 2.4, STAGE.z);
+
+// Màn chiếu sau lưng người hát. Có video YouTube thì mặt màn được vẽ trong suốt (NoBlending, alpha 0)
+// để lộ iframe ở lớp CSS3D nằm dưới canvas, khớp đúng vị trí; vật nào đứng trước vẫn che được màn.
+const SCREEN = { w: 2.4, h: 1.35, px: 960 };
+box(0.06, SCREEN.h + 0.12, SCREEN.w + 0.12, 0x111111, STAGE.x + 1.76, 1.75, STAGE.z, F3);
+for (const dz of [-1, 1]) cyl(0.03, 0.03, 1.2, 0x333333, STAGE.x + 1.78, 0.6, STAGE.z + dz * (SCREEN.w / 2 - 0.1), F3);
+let screenText = null;
+const screenTex = canvasTexture(640, 360, () => {});
+function drawScreen(title, by) {
+  const key = `${title}|${by}`;
+  if (key === screenText) return;
+  screenText = key;
+  const cv = screenTex.image, g = cv.getContext('2d'), w = cv.width, h = cv.height;
+  const grad = g.createLinearGradient(0, 0, w, h);
+  grad.addColorStop(0, '#1a0033');
+  grad.addColorStop(1, '#05202e');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, w, h);
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.shadowColor = '#e040fb';
+  g.shadowBlur = 20;
+  g.fillStyle = '#f8bbd0';
+  g.font = 'bold 44px sans-serif';
+  g.fillText(title ? '🎤 ĐANG HÁT' : '🎤 KARAOKE', w / 2, h * 0.32);
+  g.shadowBlur = 0;
+  g.fillStyle = '#fff';
+  g.font = 'bold 34px sans-serif';
+  g.fillText(title || 'Lên sân khấu để hát', w / 2, h * 0.58, w - 40);
+  g.fillStyle = '#b3e5fc';
+  g.font = '26px sans-serif';
+  g.fillText(title ? by || '' : 'chọn bài · dán link YouTube', w / 2, h * 0.76, w - 40);
+  screenTex.needsUpdate = true;
+}
+drawScreen('', '');
+const screenIdleMat = new THREE.MeshBasicMaterial({ map: screenTex });
+const screenHoleMat = new THREE.MeshBasicMaterial({ color: 0x000000, opacity: 0, blending: THREE.NoBlending, fog: false });
+const stageScreen = add(new THREE.PlaneGeometry(SCREEN.w, SCREEN.h), screenIdleMat, STAGE.x + 1.72, 1.75, STAGE.z, F3);
+stageScreen.rotation.y = -Math.PI / 2;
+
+const cssScene = new THREE.Scene();
+const cssRenderer = new CSS3DRenderer();
+cssRenderer.setSize(innerWidth, innerHeight);
+cssRenderer.domElement.className = 'screen3d';
+canvas.before(cssRenderer.domElement);
+const screenVideoEl = document.createElement('div');
+screenVideoEl.className = 'screen-video';
+const tvPlayerEl = document.createElement('div');
+screenVideoEl.appendChild(tvPlayerEl);
+const screenCss = new CSS3DObject(screenVideoEl);
+screenCss.matrixAutoUpdate = false;
+cssScene.add(screenCss);
+const screenScale = new THREE.Matrix4().makeScale(SCREEN.w / SCREEN.px, SCREEN.w / SCREEN.px, 1);
+cssRenderer.render(cssScene, camera); // gắn iframe vào trang ngay để YouTube khởi tạo được
+
+// Gọi mỗi khung hình: bật lỗ màn chiếu khi có video và tầng sân khấu đang hiện.
+function updateScreen() {
+  const on = !!(tv.yt && tv.player && !tv.failed && floors[STAGE.floor].visible);
+  stageScreen.material = on ? screenHoleMat : screenIdleMat;
+  cssRenderer.domElement.style.visibility = on ? 'visible' : 'hidden';
+  if (!on) return;
+  screenCss.matrix.multiplyMatrices(stageScreen.matrixWorld, screenScale);
+  screenCss.matrixWorldNeedsUpdate = true;
+  cssRenderer.render(cssScene, camera);
+}
 solidBox(2, STAGE.x + 1.6, STAGE.z, 0.5, 3.6);
 const stageClick = clickable(box(STAGE.w, 1.8, STAGE.d, HIT_MAT, STAGE.x, 0.9, STAGE.z, F3), {
   f: STAGE.floor,
@@ -2402,7 +2470,7 @@ function loadYT() {
   return ytReady;
 }
 
-const tv = { player: null, yt: null, startAt: 0, failed: false, local: false, localMute: false, fallbackTimer: null };
+const tv = { player: null, ready: false, yt: null, startAt: 0, failed: false, local: false, localMute: false, fallbackTimer: null };
 
 // Bài có file nhạc riêng trong public/music (chủ quán đã mua bản quyền): phát file thay cho video YouTube cùng ID.
 // Không tải được file (thiếu file, mất mạng) thì quay về video YouTube. Phát bằng Web Audio để khớp giờ server
@@ -2447,39 +2515,45 @@ async function playVideo(track, startAt) {
   clearTimeout(tv.fallbackTimer);
   Object.assign(tv, { yt: track.yt, startAt, failed: false, local: false });
   $('tv-title').textContent = `🎤 ${track.title}${track.by ? ' · ' + track.by : ''}`;
+  $('tv').classList.remove('hidden');
+  drawScreen(track.title, track.by);
   const buf = await localBuffer(track.yt);
   if (tv.yt !== track.yt) return; // đã đổi bài trong lúc tải
   if (buf) {
-    try { tv.player?.stopVideo?.(); } catch {}
+    // Tiếng phát từ file, video YouTube vẫn chiếu (tắt tiếng) trên màn sân khấu.
     tv.local = true;
     local.buf = buf;
-    $('tv').classList.add('hidden');
     startLocal((serverNow() - startAt) / 1000);
-    syncVideo();
     applyVolumes();
-    return;
   }
-  $('tv').classList.remove('hidden');
   let YT;
   try { YT = await loadYT(); } catch { videoFailed(); return; }
   if (tv.yt !== track.yt) return; // đã đổi bài trong lúc tải
   const start = Math.max(0, (serverNow() - startAt) / 1000);
   if (!tv.player) {
-    tv.player = new YT.Player('tv-player', {
+    tv.player = new YT.Player(tvPlayerEl, {
       width: '100%', height: '100%', videoId: track.yt,
-      playerVars: { autoplay: 1, start: Math.floor(start), playsinline: 1, rel: 0 },
+      playerVars: { autoplay: 1, start: Math.floor(start), playsinline: 1, rel: 0, controls: 0, disablekb: 1, iv_load_policy: 3 },
       events: {
-        onReady: () => syncVideo(),
+        onReady: () => {
+          tv.ready = true;
+          // Đổi bài trong lúc player còn khởi tạo thì giờ mới nạp bài mới.
+          if (tv.yt && tv.player.getVideoData?.().video_id !== tv.yt) {
+            tv.player.loadVideoById({ videoId: tv.yt, startSeconds: Math.max(0, (serverNow() - tv.startAt) / 1000) });
+          }
+          syncVideo();
+        },
         onStateChange: (e) => {
-          // Video hết thì người hát trả mic cho người tiếp theo.
-          if (e.data === 0 && mic.singer === myId && tv.yt) send({ t: 'mic-leave' });
+          // Video hết thì người hát trả mic cho người tiếp theo (phát từ file thì startLocal lo).
+          if (e.data === 0 && mic.singer === myId && tv.yt && !tv.local) send({ t: 'mic-leave' });
         },
         onError: videoFailed,
       },
     });
-  } else {
+  } else if (tv.ready) {
     tv.player.loadVideoById({ videoId: track.yt, startSeconds: start });
   }
+  syncVideo();
 }
 
 function stopVideo() {
@@ -2489,13 +2563,14 @@ function stopVideo() {
   stopLocal();
   try { tv.player?.stopVideo?.(); } catch {}
   $('tv').classList.add('hidden');
+  drawScreen('', '');
 }
 
 function videoFailed() {
   if (!tv.yt || tv.failed) return;
   tv.failed = true;
+  if (tv.local) return; // tiếng vẫn phát từ file, màn chiếu hiện tên bài
   toast('Video này không phát được ở đây, chuyển sang beat tự chế 🎹');
-  $('tv').classList.add('hidden');
   playSong(mic.song, mic.startAt);
   // Beat tự chế chỉ dài SONG_MS, hết beat thì người hát tự trả mic.
   const left = mic.startAt + SONG_MS - serverNow();
@@ -2514,9 +2589,9 @@ function syncLocal() {
 // Giữ video khớp giờ server; âm lượng theo tầng như syncLocal.
 
 function syncVideo() {
-  if (tv.local && tv.yt) return syncLocal();
+  if (tv.local && tv.yt) syncLocal();
   const p = tv.player;
-  if (!p?.getPlayerState || !tv.yt || tv.failed) return;
+  if (!tv.ready || !tv.yt || tv.failed) return;
   const elapsed = (serverNow() - tv.startAt) / 1000;
   const st = p.getPlayerState();
   if (elapsed < 0) {
@@ -2526,12 +2601,11 @@ function syncVideo() {
   if (st === -1 || st === 2 || st === 5) p.playVideo();
   if (st === 1 && Math.abs(p.getCurrentTime() - elapsed) > 2.5) p.seekTo(elapsed, true);
   p.setVolume(settings.karaoke);
-  if (!hearsKaraoke() || tv.localMute || muted || settings.karaoke === 0 || (document.hidden && !settings.bgPlay)) p.mute();
+  if (tv.local || !hearsKaraoke() || tv.localMute || muted || settings.karaoke === 0 || (document.hidden && !settings.bgPlay)) p.mute();
   else p.unMute();
 }
 setInterval(syncVideo, 1000);
 
-$('tv-toggle').onclick = () => $('tv').classList.toggle('collapsed');
 $('tv-sound').onclick = () => {
   tv.localMute = !tv.localMute;
   $('tv-sound').textContent = tv.localMute ? '🔇' : '🔊';
@@ -2826,7 +2900,6 @@ function onMessage(m) {
       (m.rooms || []).forEach((rm) => onMessage(rm));
       (m.tabs || []).forEach((tb) => onMessage(tb));
       $('chat-log-all').innerHTML = '';
-      addChatLine(null, 'Kênh cả quán: ai trong cơ sở này cũng thấy. Ngồi vào bàn thì có thêm kênh riêng của bàn.', 'all');
       for (const c of m.chatAll || []) addChatLine(c.name, c.text, 'all');
       setChatScope('all');
       updatePeople();
@@ -3032,8 +3105,10 @@ function setMic(m) {
     if (singer === meA) {
       moveTarget = pending = null;
       placeAt(meA, STAGE.singerX, STAGE.singerZ, -Math.PI / 2, STAGE.floor);
-      cam.yaw = Math.PI / 2;
-      cam.pitch = 0.3;
+      // Camera đứng chính giữa phía khán giả, thấy cả người hát lẫn màn chiếu sau lưng.
+      cam.yaw = -Math.PI / 2;
+      cam.pitch = 0.15;
+      cam.dist = Math.max(cam.dist, 4);
       toast(`🎤 Đến lượt bạn: ${mic.track?.title || 'hát đi nào'}!`);
     } else if (singer) {
       speak(singer, `🎤 ${mic.track?.title || 'lên hát đây!'}`, 3000);
@@ -3188,10 +3263,8 @@ function onSitMine() {
   if (T === chuBaTable) setTimeout(() => speak(chuBa, 'Ngồi đây con, uống với chú ly rượu.'), 400);
   toast(`Đã ngồi ${tableName(T)} · 2 rót · 1 dzô · 5 gọi mồi`);
   // Ngồi lại đúng bàn vừa rời thì giữ tin nhắn cũ.
-  if (chatTable !== T.id) {
-    $('chat-log').innerHTML = '';
-    addChatLine(null, `Đã ngồi ${tableName(T)}. Chỉ người cùng bàn thấy tin nhắn của bạn.`);
-  } else addChatLine(null, `Đã quay lại ${tableName(T)}. Lúc vắng mặt bạn không nhận được tin nhắn.`);
+  if (chatTable !== T.id) $('chat-log').innerHTML = '';
+  else addChatLine(null, `Đã quay lại ${tableName(T)}. Lúc vắng mặt bạn không nhận được tin nhắn.`);
   chatTable = T.id;
   setChatScope('table');
   renderLockButton();
@@ -3221,9 +3294,37 @@ for (const s of ['table', 'all']) {
   };
 }
 
+// Màn hình nhỏ (điện thoại dọc hoặc ngang) thì chat thu gọn thành nút 💬, bấm mới mở.
+const chatMQ = matchMedia('(max-width: 900px), (max-height: 500px)');
+let chatCollapsed = true;
+const chatFolded = () => chatMQ.matches && chatCollapsed;
+function applyChatLayout() {
+  const chat = $('chat'), btn = $('chat-toggle');
+  chat.classList.toggle('compact', chatMQ.matches);
+  chat.classList.toggle('collapsed', chatFolded());
+  btn.firstChild.textContent = chatFolded() ? '💬 Chat' : '▾ Thu gọn';
+  btn.setAttribute('aria-expanded', !chatFolded());
+  if (!chatFolded()) {
+    btn.querySelector('.badge').classList.add('hidden');
+    const log = chatScope === 'all' ? $('chat-log-all') : $('chat-log');
+    log.scrollTop = log.scrollHeight;
+  }
+}
+function setChatOpen(open) {
+  chatCollapsed = !open;
+  applyChatLayout();
+}
+$('chat-toggle').onclick = (e) => {
+  setChatOpen(chatCollapsed);
+  e.currentTarget.blur();
+};
+chatMQ.addEventListener('change', applyChatLayout);
+applyChatLayout();
+
 function addChatLine(name, text, scope = 'table') {
   const log = scope === 'all' ? $('chat-log-all') : $('chat-log');
   if (scope !== chatScope && name) $(`chat-tab-${scope}`).querySelector('.badge').classList.remove('hidden');
+  if (chatFolded() && name) $('chat-toggle').querySelector('.badge').classList.remove('hidden');
   const line = document.createElement('div');
   if (name) {
     const b = document.createElement('b');
@@ -3777,6 +3878,7 @@ addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement) return;
   if (e.code === 'Enter' && !modal && state.started) {
     e.preventDefault();
+    setChatOpen(true);
     $('chat-input').focus();
     return;
   }
@@ -4705,6 +4807,7 @@ function loop() {
   updateCamera(dt, t);
   updateTags();
   renderer.render(scene, camera);
+  updateScreen();
   if (modal === 'start') preview.render(dt, t);
   if (firstFrame) {
     firstFrame = false;
@@ -4716,4 +4819,4 @@ function loop() {
 loop();
 
 // Dùng cho kiểm thử trong console
-window.__nhau = { state, rideElevator, cam, audioInfo: () => ({ bgmStep: BGM.step, music: buses.music?.gain.value, ctx: audio?.state }), get me() { return meA; }, walkTo, findPath, get localPlaying() { return !!local.src && { t: +(audio.currentTime - local.at).toFixed(1), dur: +local.buf.duration.toFixed(1), gain: +local.gain.gain.value.toFixed(2) }; }, remotes, TABLES, send, pour, cheers, emote, get mic() { return mic; } };
+window.__nhau = { state, rideElevator, cam, audioInfo: () => ({ bgmStep: BGM.step, music: buses.music?.gain.value, ctx: audio?.state }), get me() { return meA; }, walkTo, findPath, get localPlaying() { return !!local.src && { t: +(audio.currentTime - local.at).toFixed(1), dur: +local.buf.duration.toFixed(1), gain: +local.gain.gain.value.toFixed(2) }; }, remotes, TABLES, send, pour, cheers, emote, get mic() { return mic; }, tv, screenVideoEl };
