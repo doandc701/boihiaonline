@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import {
   ROOMS, CAPACITY, TABLES, MENU, ACTS, SHIRTS, HAIRS, FLOOR_BOUNDS, STAGE,
-  SONG_MS, MAX_SONG_MS, MIC_DELAY_MS, ROUND_COOLDOWN_MS, MAX_DISHES, CHAT_MAX, seatPos, nearestFreeSeat,
+  SONG_MS, MAX_SONG_MS, MIC_DELAY_MS, ROUND_COOLDOWN_MS, MAX_DISHES, CHAT_MAX, seatPos, nearestFreeSeat, tabTotal,
 } from '../shared/world.js';
 import { SONGS, parseYouTube } from '../shared/songs.js';
 
@@ -76,6 +76,7 @@ const rooms = new Map(ROOMS.filter((r) => !ACTIVE_ROOMS.length || ACTIVE_ROOMS.i
   players: new Map(),
   seats: new Map(), // "bàn:ghế" -> id người chơi
   dishes: TABLES.map(() => []),
+  tabs: TABLES.map(() => newTab()), // hoá đơn chung từng bàn
   // queue: [{ id, track }]; track: { title, by, yt } (yt = null thì phát beat tự chế)
   mic: { singer: null, startAt: 0, endsAt: 0, song: 0, track: null, queue: [] },
   micTimer: null,
@@ -83,6 +84,13 @@ const rooms = new Map(ROOMS.filter((r) => !ACTIVE_ROOMS.length || ACTIVE_ROOMS.i
   privateRooms: new Map(), // id bàn phòng riêng -> { owner, locked }
 }]));
 let nextId = 1;
+function newTab() { return { items: [], pours: 0, paidBy: null, paidName: null }; }
+const tabMsg = (room, table) => ({ t: 'tab', table, ...room.tabs[table], total: tabTotal(TABLES[table], room.tabs[table]) });
+// Gọi thêm / rót thêm sau khi bàn đã trả tiền thì mở hoá đơn mới.
+function openTab(room, table) {
+  if (room.tabs[table].paidBy) room.tabs[table] = newTab();
+  return room.tabs[table];
+}
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
@@ -127,6 +135,7 @@ function join(room, ws, m) {
     players: [...room.players.values()].filter((o) => o !== p).map(pub),
     dishes: room.dishes, mic: micState(room), features: { ytSearch: !!YOUTUBE_API_KEY },
     rooms: [...room.privateRooms.keys()].map((table) => roomMsg(room, table)),
+    tabs: room.tabs.map((_, table) => tabMsg(room, table)),
   });
   for (const o of room.players.values()) if (o !== p) send(o.ws, { t: 'join', player: pub(p) });
   return p;
@@ -179,10 +188,17 @@ function stand(room, p) {
     else room.privateRooms.delete(table);
     broadcast(room, roomMsg(room, table));
   }
-  // Bàn trống thì dọn mồi.
-  if (![...room.seats.keys()].some((k) => k.startsWith(table + ':')) && room.dishes[table].length) {
-    room.dishes[table] = [];
-    broadcast(room, { t: 'dishes', table, items: [] });
+  // Bàn trống thì dọn mồi và xoá hoá đơn.
+  if (![...room.seats.keys()].some((k) => k.startsWith(table + ':'))) {
+    if (room.dishes[table].length) {
+      room.dishes[table] = [];
+      broadcast(room, { t: 'dishes', table, items: [] });
+    }
+    const tab = room.tabs[table];
+    if (tab.items.length || tab.pours || tab.paidBy) {
+      room.tabs[table] = newTab();
+      broadcast(room, tabMsg(room, table));
+    }
   }
 }
 
@@ -247,6 +263,10 @@ function handle(room, p, m) {
       if (!ACTS.includes(m.k) || !cooldown(p, 'act', 400)) return;
       const to = typeof m.to === 'string' && room.players.has(m.to) ? m.to : undefined;
       broadcast(room, { t: 'act', id: p.id, k: m.k, to });
+      if (m.k === 'pour' && p.seat) {
+        openTab(room, p.seat.table).pours++;
+        broadcast(room, tabMsg(room, p.seat.table));
+      }
       break;
     }
     case 'order': {
@@ -255,6 +275,21 @@ function handle(room, p, m) {
       list.push(m.item);
       if (list.length > MAX_DISHES) list.shift();
       broadcast(room, { t: 'dish', table: p.seat.table, item: m.item, by: p.id });
+      const tab = openTab(room, p.seat.table);
+      if (tab.items.length < 200) tab.items.push(m.item);
+      broadcast(room, tabMsg(room, p.seat.table));
+      break;
+    }
+    case 'pay': {
+      // Chỉ người đang ngồi bàn, bàn đã gọi món, và chưa ai trả mới thanh toán được.
+      if (!p.seat || !cooldown(p, 'pay', 1000)) return;
+      const table = p.seat.table, tab = room.tabs[table];
+      if (tab.paidBy) { send(p.ws, { t: 'notice', msg: `Bàn này ${tab.paidName} đã thanh toán rồi 💸` }); return; }
+      if (!tab.items.length) { send(p.ws, { t: 'notice', msg: 'Bàn chưa gọi món nào, gọi món trước rồi mới tính tiền nhé!' }); return; }
+      tab.paidBy = p.id;
+      tab.paidName = p.name;
+      broadcast(room, { t: 'paid', table, by: p.id, name: p.name, total: tabTotal(TABLES[table], tab) });
+      broadcast(room, tabMsg(room, table));
       break;
     }
     case 'round': {

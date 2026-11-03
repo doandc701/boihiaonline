@@ -72,6 +72,19 @@ for (const z of [-3.6, -7.8]) {
 // Sân khấu karaoke trên sân thượng.
 export const STAGE = { floor: 2, x: 15.6, z: -7, w: 3.2, d: 5, singerX: 16.3, singerZ: -7 };
 
+// Đồ uống theo bàn: bàn chú Ba uống rượu đế chú mời (miễn phí), các bàn khác uống bia.
+export const DRINKS = {
+  beer: { name: 'Bia Sài Gòn', icon: '🍺', price: 20000, strength: 10, color: 0xe8a317 },
+  ruou: { name: 'Rượu đế (chú Ba mời)', icon: '🍶', price: 0, strength: 16, color: 0xeeeedd },
+};
+export const drinkOfTable = (T) => (T.npcSeats ? DRINKS.ruou : DRINKS.beer);
+
+// Hoá đơn chung của bàn: món đã gọi + số lượt rót. Tính tiền được khi đã gọi ít nhất 1 món;
+// một người trả cho cả bàn, gọi thêm sau khi trả thì mở hoá đơn mới.
+export function tabTotal(T, tab) {
+  return tab.items.reduce((s, i) => s + (MENU[i]?.price || 0), 0) + tab.pours * drinkOfTable(T).price;
+}
+
 export const MENU = [
   { icon: '🥜', name: 'Lạc rang', price: 15000 },
   { icon: '🦑', name: 'Mực nướng', price: 120000 },

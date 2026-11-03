@@ -12,8 +12,85 @@
     { const h = ((Date.now() / 3600000 + 7) % 24); document.documentElement.dataset.theme = h >= 6 && h < 18 ? 'light' : 'dark'; }
   </script>
   <link rel="stylesheet" href="game.css">
+  <style>
+    /* Màn chờ kiểu bia hơi: viết sẵn trong trang để hiện ngay, không chờ tải file CSS */
+    #boot { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+      background: radial-gradient(circle at 50% 40%, #4a2c14 0%, #24150a 60%, #120a04 100%); color: #ffe9b0; font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+      transition: opacity .7s ease, visibility .7s; }
+    #boot.done { opacity: 0; visibility: hidden; }
+    .boot-sign { padding: 8px 22px; border-radius: 6px; text-align: center; color: #d0201c; font: bold clamp(1.6rem, 6vw, 2.4rem)/1.1 Georgia, "Times New Roman", serif;
+      background: repeating-linear-gradient(90deg, #ffd54a 0 10px, #ffc928 10px 16px, #f2b31b 16px 22px); box-shadow: 0 6px 20px #0008;
+      text-shadow: -2px -2px 0 #fff, 2px -2px 0 #fff, -2px 2px 0 #fff, 2px 2px 0 #fff, 3px 4px 4px #6008; }
+    .boot-sign small { display: block; font: italic bold .8rem Georgia, serif; text-shadow: 1px 1px 0 #fff; margin-top: 2px; }
+    .mug { position: relative; width: 120px; height: 160px; }
+    .mug-glass { position: absolute; inset: 0 0 0 0; width: 120px; height: 160px; border: 5px solid #fff8; border-top: 0; border-radius: 6px 6px 18px 18px; overflow: hidden;
+      background: linear-gradient(90deg, #ffffff14, #ffffff05 40%, #ffffff18 60%, #ffffff08); box-shadow: inset 0 0 18px #fff2; }
+    .mug-glass::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 16px, #ffffff1c 16px 20px); }
+    .mug-handle { position: absolute; right: -36px; top: 30px; width: 40px; height: 84px; border: 9px solid #fff8; border-left: 0; border-radius: 0 30px 30px 0; }
+    .beer { position: absolute; left: 0; right: 0; bottom: 0; height: 0%; background: linear-gradient(#ffc93c, #e89b10); transition: height .6s cubic-bezier(.3,.7,.3,1); }
+    .foam { position: absolute; left: -4px; right: -4px; top: -14px; height: 18px; border-radius: 10px; background: #fffbe8;
+      box-shadow: 10px -6px 0 2px #fffbe8, 40px -4px 0 4px #fffbe8, 75px -7px 0 3px #fffbe8, 100px -3px 0 2px #fffbe8; animation: foam 1.4s ease-in-out infinite; }
+    .boot-bubble { position: absolute; bottom: 4px; width: 5px; height: 5px; border-radius: 50%; background: #fff9; animation: rise 2.4s linear infinite; }
+    @keyframes foam { 50% { transform: translateY(-3px) scaleX(1.03); } }
+    @keyframes rise { from { transform: translateY(0); opacity: .9; } to { transform: translateY(-140px); opacity: 0; } }
+    .boot-msg { min-height: 1.4em; font-size: 1rem; color: #ffd98a; letter-spacing: .3px; }
+    .boot-msg b { color: #fff; }
+    .boot-dzo { font: 900 clamp(2.2rem, 10vw, 3.4rem) system-ui, sans-serif; color: #ffe082; text-shadow: 0 0 22px #f2a900; opacity: 0; transform: scale(.6); transition: .35s; height: 0; margin-top: -18px; }
+    #boot.cheers .boot-dzo { opacity: 1; transform: scale(1); }
+    .boot-retry { display: none; background: #f2a900; color: #2b1a00; border: 0; border-radius: 99px; padding: 10px 22px; font: 700 1rem system-ui, sans-serif; cursor: pointer; }
+    #boot.error .boot-retry { display: inline-block; }
+    #boot.error .boot-bubble, #boot.error .foam { animation: none; }
+    @media (prefers-reduced-motion: reduce) { .boot-bubble, .foam { animation: none; } .beer { transition: none; } }
+  </style>
 </head>
 <body>
+  <!-- Màn chờ: rót bia hơi theo tiến độ tải -->
+  <div id="boot" role="status" aria-live="polite">
+    <div class="boot-sign">Bơi Hia Dứt Cạn<small>Đã Vào Là Dứt · Đã Uống Là Cạn</small></div>
+    <div class="mug" aria-hidden="true">
+      <div class="mug-glass">
+        <div class="beer" id="boot-beer"><div class="foam"></div>
+          <span class="boot-bubble" style="left:18%;animation-delay:0s"></span><span class="boot-bubble" style="left:40%;animation-delay:.7s"></span>
+          <span class="boot-bubble" style="left:62%;animation-delay:1.3s"></span><span class="boot-bubble" style="left:80%;animation-delay:.3s"></span>
+          <span class="boot-bubble" style="left:30%;animation-delay:1.8s"></span>
+        </div>
+      </div>
+      <div class="mug-handle"></div>
+    </div>
+    <div class="boot-dzo">DZÔ!</div>
+    <div class="boot-msg" id="boot-msg">Đang mở cửa quán…</div>
+    <button class="boot-retry" onclick="location.reload()">🍺 Rót lại</button>
+  </div>
+  <script>
+    // Tiến độ màn chờ: game.js gọi __boot(phần trăm, câu chữ) và __bootDone() khi vẽ xong khung hình đầu.
+    (() => {
+      const beer = document.getElementById('boot-beer'), msg = document.getElementById('boot-msg'), boot = document.getElementById('boot');
+      const lines = ['Đang rót bia hơi…', 'Đang nướng mực…', 'Đang kê ghế nhựa…', 'Đang ướp đá…', 'Đang lau ly…', 'Đang gọi anh em…'];
+      let pct = 0, i = 0, done = false;
+      const set = (p, text) => { pct = Math.max(pct, p); beer.style.height = pct + '%'; if (text) msg.textContent = text; };
+      window.__boot = set;
+      // Trong lúc chờ thư viện 3D: bia dâng chậm tới 60% và đổi câu cho vui
+      const tick = setInterval(() => { if (pct < 60) set(pct + 4); msg.textContent = lines[i++ % lines.length]; }, 700);
+      const t0 = Date.now();
+      window.__bootDone = () => {
+        if (done) return;
+        done = true;
+        clearInterval(tick);
+        const finish = () => {
+          set(100, 'Bia đầy rồi, vào quán thôi!');
+          setTimeout(() => boot.classList.add('cheers'), 450);
+          setTimeout(() => boot.classList.add('done'), 1100);
+          setTimeout(() => boot.remove(), 1900);
+        };
+        setTimeout(finish, Math.max(0, 1200 - (Date.now() - t0))); // giữ tối thiểu ~1,2 giây cho kịp thấy rót bia
+      };
+      // Lỗi tải hoặc quá lâu: báo và cho rót lại
+      const fail = (text) => { if (done) return; clearInterval(tick); boot.classList.add('error'); msg.innerHTML = text; };
+      window.__bootFail = fail;
+      setTimeout(() => fail('Bia rót lâu quá… <b>kiểm tra mạng</b> rồi rót lại nhé'), 25000);
+      addEventListener('error', (e) => { if (e.target?.tagName === 'SCRIPT') fail('Không tải được quán. <b>Kiểm tra mạng</b> rồi rót lại nhé'); }, true);
+    })();
+  </script>
   <canvas id="game"></canvas>
   <div id="tags"></div>
 
@@ -230,6 +307,7 @@
       <h2>🧾 Hoá đơn</h2>
       <div id="bill"></div>
       <div class="row-btns">
+        <button id="btn-pay" class="pay-btn">💸 Thanh toán</button>
         <button id="btn-bill-back" class="ghost">↩ Quay lại</button>
         <button id="btn-again">🔁 Làm tăng 2</button>
         <button id="btn-home" class="ghost">🏠 Về nhà</button>
@@ -238,7 +316,8 @@
   </div>
 
   <div id="overlay-end" class="overlay hidden">
-    <div class="panel">
+    <div class="panel end-panel">
+      <button id="btn-end-close" class="close-x" title="Đóng" aria-label="Đóng">✕</button>
       <h1>🛵 Về nhà an toàn nhé</h1>
       <p class="sub">Đã uống rượu bia thì không lái xe.<br>Lúc nào buồn thì ghé quán ngồi tiếp.</p>
       <button id="btn-return" class="big">Quay lại quán</button>
@@ -251,7 +330,7 @@
   <script type="importmap">
     { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
   </script>
-  <script type="module" src="game.js"></script>
+  <script type="module" src="game.js" onerror="window.__bootFail?.('Không tải được quán. <b>Kiểm tra mạng</b> rồi rót lại nhé')"></script>
   <script>
     // Chế độ dev: sửa file là trang tự tải lại; server khởi động lại (boot khác) cũng tải lại.
     (() => {

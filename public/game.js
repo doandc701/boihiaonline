@@ -1,20 +1,20 @@
 // Nhậu Online — quán nhậu 3D nhiều người: ngồi chung bàn, không chat, chỉ có hành động.
 import * as THREE from 'three';
+window.__boot?.(65, 'Đang dựng quán…');
 import {
   ROOMS, TABLES, STAGE, MENU, SHIRTS, HAIRS, SONG_MS, MIC_DELAY_MS,
   FLOOR_H, FLOOR_NAMES, FLOOR_BOUNDS, BUILDING, CORE, ELEVATOR, KITCHEN, WCS, DUMBWAITER, PARKING,
-  GOLDEN_EVERY, GOLDEN_MS, MAX_SONG_MS, CHAT_MAX, seatPos, seatYaw, nearestFreeSeat,
+  GOLDEN_EVERY, GOLDEN_MS, MAX_SONG_MS, CHAT_MAX, seatPos, seatYaw, nearestFreeSeat, DRINKS, drinkOfTable, tabTotal,
 } from '/shared/world.js';
 import { SONGS, GENRES, parseYouTube } from '/shared/songs.js';
 
 // ================= Cấu hình =================
 // Tài khoản nhận ủng hộ ("Bao chủ quán một ly"), ảnh QR ở public/donate-qr.png.
 const DONATE = { bank: 'BIDV', owner: 'NGUYEN XUAN DOAN', account: '2152971408' };
-const BEER = { name: 'Bia Sài Gòn', icon: '🍺', price: 20000, strength: 10, color: 0xe8a317 };
-const RUOU = { name: 'Rượu đế (chú Ba mời)', icon: '🍶', price: 0, strength: 16, color: 0xeeeedd };
+const BEER = DRINKS.beer; // giá đồ uống dùng chung với server (shared/world.js)
 const ROUND_PRICE = 500000;
 const HAIR_COLORS = [0x1b1b1b, 0x3b2314, 0x5a3a22, 0x111111];
-const drinkOf = (tableId) => (TABLES[tableId].npcSeats ? RUOU : BEER);
+const drinkOf = (tableId) => drinkOfTable(TABLES[tableId]);
 const tableName = (T) => T.name;
 
 const LINES = {
@@ -1149,53 +1149,84 @@ for (const T of TABLES) {
 }
 
 // ================= Nhân vật =================
+// Nhân vật kiểu chibi: đầu to tròn, mắt nhắm cười "^ ^", má hồng, thân tròn ngắn, tay chân mũm mĩm.
+const PERSON_HIP = 0.5; // độ cao hông khi đứng
+const SEAT_DROP = -0.12; // hạ thân khi ngồi ghế nhựa
+const SKIN_DEFAULT = 0xf0b27a;
 function makePerson(o = {}) {
-  const { shirt = 0x2e86de, pants = 0x2d3436, skin = 0xe8b98f, hair = 0x1b1b1b, bald = false, female = false, belly = 1, hat = false, chefHat = false } = o;
+  const { shirt = 0x2e86de, pants = 0x2d3436, skin = SKIN_DEFAULT, hair = 0x1b1b1b, bald = false, female = false, belly = 1, hat = false, chefHat = false } = o;
   const root = new THREE.Group();
   const body = new THREE.Group();
   root.add(body);
-  const HIP = 0.86;
+  const HIP = PERSON_HIP, soft = (c) => mat(c, { roughness: 0.7 });
   const legs = [], knees = [];
-  for (const sx of [-0.1, 0.1]) {
+  for (const sx of [-0.09, 0.09]) {
     const hip = new THREE.Group();
     hip.position.set(sx, HIP, 0);
     body.add(hip);
-    box(0.15, 0.45, 0.15, pants, 0, -0.215, 0, hip);
+    add(new THREE.CapsuleGeometry(0.085, 0.12, 4, 10), pants, 0, -0.12, 0, hip);
     const knee = new THREE.Group();
-    knee.position.y = -0.43;
+    knee.position.y = -0.25;
     hip.add(knee);
-    box(0.13, 0.43, 0.13, pants, 0, -0.215, 0, knee);
-    box(0.14, 0.05, 0.22, 0x222222, 0, -0.42, 0.04, knee);
+    add(new THREE.CapsuleGeometry(0.075, 0.1, 4, 10), pants, 0, -0.1, 0, knee);
+    const shoe = ball(0.085, 0xfafafa, 0, -0.21, 0.04, knee); // giày tròn
+    shoe.scale.set(1, 0.6, 1.35);
     legs.push(hip);
     knees.push(knee);
   }
-  const torso = add(new THREE.CapsuleGeometry(0.17 * belly, 0.3, 4, 10), shirt, 0, HIP + 0.3, 0, body);
-  torso.scale.z = 0.75;
+  // thân tròn + cạp quần
+  const torso = add(new THREE.CapsuleGeometry(0.2 * belly, 0.16, 6, 14), shirt, 0, HIP + 0.2, 0, body);
+  torso.scale.z = 0.85;
+  cyl(0.2 * belly, 0.19 * belly, 0.1, pants, 0, HIP + 0.02, 0, body).scale.z = 0.85;
 
+  // đầu to
   const head = new THREE.Group();
-  head.position.y = HIP + 0.75;
+  head.position.y = HIP + 0.72;
   body.add(head);
-  ball(0.14, bald ? mat(skin, { roughness: 0.3 }) : skin, 0, 0, 0, head);
-  ball(0.018, 0x111111, -0.05, 0.02, 0.125, head);
-  ball(0.018, 0x111111, 0.05, 0.02, 0.125, head);
-  box(0.06, 0.012, 0.01, 0x7a2e2e, 0, -0.06, 0.13, head);
-  if (!bald) add(new THREE.SphereGeometry(0.15, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), hair, 0, 0, 0, head).rotation.x = -0.3;
-  if (female) box(0.27, 0.32, 0.08, hair, 0, -0.1, -0.1, head);
-  if (hat) add(new THREE.ConeGeometry(0.3, 0.15, 16), 0xd4b483, 0, 0.17, 0, head); // nón lá
-  if (chefHat) cyl(0.13, 0.11, 0.22, 0xffffff, 0, 0.2, 0, head); // mũ đầu bếp
+  const R = 0.3;
+  ball(R, bald ? mat(skin, { roughness: 0.35 }) : soft(skin), 0, 0, 0, head);
+  const face = (x, y) => Math.sqrt(R * R - x * x - y * y) - 0.005;
+  // mắt nhắm cười: hai vòng cung "∩"
+  for (const ex of [-0.1, 0.1]) {
+    const eye = add(new THREE.TorusGeometry(0.038, 0.011, 6, 14, Math.PI), 0x3e2723, ex, 0.0, face(ex, 0.02), head);
+    eye.rotation.y = Math.atan2(ex, face(ex, 0)) ;
+  }
+  // miệng cười "∪"
+  const mouth = add(new THREE.TorusGeometry(0.035, 0.009, 6, 14, Math.PI), 0x8d3b2f, 0, -0.085, face(0, -0.085), head);
+  mouth.rotation.z = Math.PI;
+  // má hồng
+  for (const cx of [-0.17, 0.17]) {
+    const cheek = ball(0.06, new THREE.MeshBasicMaterial({ color: 0xff8a80, transparent: true, opacity: 0.55 }), cx, -0.06, face(cx, -0.06) - 0.01, head);
+    cheek.scale.set(1, 0.7, 0.35);
+    cheek.rotation.y = Math.atan2(cx, face(cx, -0.06));
+  }
+  if (!bald) {
+    const cap = add(new THREE.SphereGeometry(R + 0.012, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2.1), hair, 0, 0.01, -0.02, head);
+    cap.rotation.x = -0.45; // mái tóc hất ra sau, chừa mặt
+  }
+  if (female) {
+    const back = add(new THREE.CapsuleGeometry(0.2, 0.18, 6, 12), hair, 0, -0.12, -0.17, head);
+    back.scale.z = 0.6;
+  }
+  if (hat) add(new THREE.ConeGeometry(0.46, 0.2, 18), 0xd4b483, 0, 0.32, 0, head); // nón lá
+  if (chefHat) {
+    cyl(0.2, 0.18, 0.2, 0xffffff, 0, 0.33, 0, head); // mũ đầu bếp
+    ball(0.22, 0xffffff, 0, 0.46, 0, head).scale.y = 0.6;
+  }
 
+  // tay ngắn mũm mĩm, bàn tay tròn
   const arms = [];
   for (const sx of [-1, 1]) {
     const p = new THREE.Group();
-    p.position.set(sx * (0.17 * belly + 0.08), HIP + 0.52, 0);
+    p.position.set(sx * (0.2 * belly + 0.05), HIP + 0.36, 0);
     body.add(p);
-    box(0.11, 0.18, 0.11, shirt, 0, -0.08, 0, p);
-    box(0.08, 0.34, 0.08, skin, 0, -0.32, 0, p);
+    add(new THREE.CapsuleGeometry(0.075, 0.1, 4, 10), shirt, 0, -0.1, 0, p);
+    ball(0.07, soft(skin), 0, -0.25, 0, p);
     arms.push(p);
   }
   // Ly ở tay phải
   const cup = new THREE.Group();
-  cup.position.set(0, -0.5, 0.03);
+  cup.position.set(0, -0.28, 0.06);
   arms[1].add(cup);
   cyl(0.04, 0.034, 0.1, mat(0xffffff, { transparent: true, opacity: 0.35 }), 0, 0, 0, cup);
   const liquidMat = mat(BEER.color, { roughness: 0.2 });
@@ -1205,13 +1236,13 @@ function makePerson(o = {}) {
   cup.visible = false;
   // Chai ở tay trái (khi rót), mic ở tay phải (khi hát)
   const bottle = new THREE.Group();
-  bottle.position.set(0, -0.5, 0.05);
+  bottle.position.set(0, -0.3, 0.06);
   arms[0].add(bottle);
   cyl(0.035, 0.035, 0.18, glassMat, 0, 0, 0, bottle);
   cyl(0.013, 0.033, 0.08, glassMat, 0, 0.13, 0, bottle);
   bottle.visible = false;
   const mic = new THREE.Group();
-  mic.position.set(0, -0.52, 0.03);
+  mic.position.set(0, -0.3, 0.06);
   arms[1].add(mic);
   cyl(0.02, 0.015, 0.16, 0x111111, 0, 0, 0, mic);
   ball(0.035, 0x555555, 0, 0.1, 0, mic);
@@ -1307,8 +1338,8 @@ clickable(box(3, 1.8, 1.4, HIT_MAT, 4.8, 0.9, -2.7, F1), {
 });
 
 const vendor = createActor({ shirt: 0x8d6e63, hair: 0x333333, female: true, hat: true }, 'Cô bán lạc', 'npc');
-box(0.5, 0.06, 0.35, 0x8d6e63, 0, 1.0, 0.45, vendor.person.body);
-for (let i = 0; i < 5; i++) box(0.08, 0.05, 0.08, 0xf5deb3, -0.18 + i * 0.09, 1.05, 0.45, vendor.person.body);
+box(0.5, 0.06, 0.35, 0x8d6e63, 0, 0.8, 0.42, vendor.person.body);
+for (let i = 0; i < 5; i++) box(0.08, 0.05, 0.08, 0xf5deb3, -0.18 + i * 0.09, 0.85, 0.42, vendor.person.body);
 placeAt(vendor, -9, 2.95, Math.PI / 2, 0);
 vendor.dir = 1;
 vendor.fixedArms = -1.3;
@@ -1397,7 +1428,7 @@ const photographer = beachPerson({ shirt: 0x8d6e63, bald: true, female: false })
 photographer.root.position.set(34, 0, 38);
 photographer.root.rotation.y = 0.2;
 photographer.arms.forEach((a) => (a.rotation.x = -1.6));
-box(0.18, 0.12, 0.1, 0x212121, 0, 1.68, 0.38, photographer.body);
+box(0.18, 0.12, 0.1, 0x212121, 0, 1.18, 0.4, photographer.body);
 
 // Bóng chuyền bãi biển 2 đấu 2 (ban ngày)
 const VB = { x: -18, z: 30 }, vbG = dayGroup();
@@ -1437,7 +1468,7 @@ const builder = beachPerson({ female: true }, sandG);
 builder.root.scale.setScalar(0.6);
 setSeated(builder, true);
 builder.cup.visible = false;
-builder.body.position.y = -0.5;
+builder.body.position.y = SEAT_DROP - 0.26; // ngồi bệt trên cát
 builder.root.position.set(4, 0, 37.9);
 builder.root.rotation.y = Math.PI;
 
@@ -1483,7 +1514,7 @@ for (const [x, z] of [[-10, 38], [8, 40], [30, 36], [-30, 39]]) {
     const p = beachPerson({ female: dx > 0 }, coupleG);
     setSeated(p, true);
     p.cup.visible = false;
-    p.body.position.y = -0.62;
+    p.body.position.y = SEAT_DROP - 0.26;
     p.root.position.set(x + dx, 0, z);
   }
 }
@@ -1590,7 +1621,7 @@ function seated(o, parent, x, y, z) {
   const p = beachPerson(o, parent);
   setSeated(p, true);
   p.cup.visible = false;
-  p.body.position.y = -0.44;
+  p.body.position.y = SEAT_DROP;
   p.root.position.set(x, y, z);
   return p;
 }
@@ -1622,7 +1653,7 @@ function makeJetski(color, withRider = true) {
   if (withRider) {
     const r = seated({ shirt: pick([0xff1744, 0x2979ff, 0xffea00]) }, g, 0, 0.18, -0.3);
     r.arms.forEach((a) => (a.rotation.x = -1.3));
-    add(new THREE.BoxGeometry(0.5, 0.35, 0.3), 0xff6d00, 0, 1.0, -0.3, r.body); // áo phao
+    add(new THREE.BoxGeometry(0.46, 0.3, 0.38), 0xff6d00, 0, PERSON_HIP + 0.2, 0, r.body); // áo phao
   }
   wake(g, 3.5, 0.8);
   return g;
@@ -1909,7 +1940,7 @@ for (let i = 0; i < 5; i++) {
   rider.arms.forEach((a) => (a.rotation.x = -1.2));
   rider.root.position.set(-0.2, 0.3, 0);
   rider.root.rotation.y = Math.PI / 2;
-  ball(0.17, 0xf5f5f5, 0, 0.12, 0, rider.head);
+  ball(0.33, 0xf5f5f5, 0, 0.06, -0.02, rider.head).scale.set(1, 0.95, 1); // mũ bảo hiểm
   g.add(rider.root);
   const forward = i % 2 === 0;
   g.position.set(-30 + i * 13, 0, forward ? 5.2 : 8.8);
@@ -2301,13 +2332,19 @@ $('btn-song-url').onclick = () => {
 const state = {
   name: 'Bạn', look: { s: 0, h: 0, b: 0 }, room: ROOMS[0].id, started: false, leaving: false,
   fill: 0, drunk: 0, drunkLevel: 0, cheers: 0, waters: 0,
-  pours: {}, dishes: [], extras: [], rounds: 0, startedAt: 0, passedOut: false,
+  paid: 0, extras: [], rounds: 0, startedAt: 0, passedOut: false, // paid: tiền mình đã trả cho các bàn
 };
 let myId = 'me';
 let meA = null; // actor của mình
 const remotes = new Map();
 let mic = { singer: null, queue: [], startAt: 0, endsAt: 0, song: 0, track: null };
 let features = { ytSearch: false };
+// Hoá đơn chung từng bàn (server giữ): { items, pours, paidBy, paidName }
+const tabs = TABLES.map(() => ({ items: [], pours: 0, paidBy: null, paidName: null }));
+function localTab(table) { // chế độ offline: tự mở hoá đơn mới nếu đã trả
+  if (tabs[table].paidBy) tabs[table] = { items: [], pours: 0, paidBy: null, paidName: null };
+  return tabs[table];
+}
 const roomState = new Map(); // id bàn phòng riêng -> { owner, locked }
 const inMicQueue = () => mic.queue.some((q) => q.id === myId);
 let modal = 'start';
@@ -2396,7 +2433,30 @@ function localServer(m) {
     case 'room-lock':
       if (meA.seat) reply({ t: 'room', table: meA.seat.table, owner: myId, locked: !!m.locked });
       break;
-    case 'order': if (meA.seat) reply({ t: 'dish', table: meA.seat.table, item: m.item, by: myId }); break;
+    case 'order':
+      if (!meA.seat) break;
+      reply({ t: 'dish', table: meA.seat.table, item: m.item, by: myId });
+      localTab(meA.seat.table).items.push(m.item);
+      reply({ t: 'tab', table: meA.seat.table, ...tabs[meA.seat.table] });
+      break;
+    case 'act':
+      if (m.k === 'pour' && meA.seat) {
+        localTab(meA.seat.table).pours++;
+        reply({ t: 'tab', table: meA.seat.table, ...tabs[meA.seat.table] });
+      }
+      break;
+    case 'pay': {
+      const tab = meA.seat && tabs[meA.seat.table];
+      if (!tab) break;
+      if (tab.paidBy) reply({ t: 'notice', msg: 'Bàn này đã thanh toán rồi 💸' });
+      else if (!tab.items.length) reply({ t: 'notice', msg: 'Bàn chưa gọi món nào, gọi món trước rồi mới tính tiền nhé!' });
+      else {
+        const total = tabTotal(TABLES[meA.seat.table], tab);
+        reply({ t: 'paid', table: meA.seat.table, by: myId, name: state.name, total });
+        reply({ t: 'tab', table: meA.seat.table, ...tab, paidBy: myId, paidName: state.name });
+      }
+      break;
+    }
     case 'round': reply({ t: 'round', id: myId, name: state.name }); break;
     case 'mic-join': {
       if (mic.singer) return;
@@ -2469,6 +2529,7 @@ function onMessage(m) {
       placeAt(meA, Math.random() * 2 - 1, 2.6, Math.PI, 0);
       roomState.clear();
       (m.rooms || []).forEach((rm) => onMessage(rm));
+      (m.tabs || []).forEach((tb) => onMessage(tb));
       updatePeople();
       break;
     case 'join':
@@ -2555,13 +2616,26 @@ function onMessage(m) {
         }, 1500);
       }
       if (meA.f === 0 && Math.hypot(meA.rx - chef.rx, meA.rz - chef.rz) < 9) noiseHit(1.2, 3000, 0.08, 'highpass');
-      if (m.by === myId) state.dishes.push(MENU[m.item]);
-      else speak(actorById(m.by), `gọi ${MENU[m.item].icon} ${MENU[m.item].name}`, 2500);
+      if (m.by !== myId) speak(actorById(m.by), `gọi ${MENU[m.item].icon} ${MENU[m.item].name}`, 2500);
       break;
     }
     case 'dishes':
       TABLES[m.table].dishes.clear();
       break;
+    case 'tab':
+      tabs[m.table] = { items: m.items || [], pours: m.pours || 0, paidBy: m.paidBy ?? null, paidName: m.paidName ?? null };
+      if (modal === 'bill' && meA?.seat?.table === m.table) showBill();
+      break;
+    case 'paid': {
+      if (m.by === myId) {
+        state.paid += m.total;
+        toast(`💸 Bạn đã thanh toán ${fmt(m.total)} cho cả bàn. Hào phóng quá!`);
+      } else if (meA?.seat?.table === m.table) {
+        toast(`💸 ${m.name} đã thanh toán ${fmt(m.total)} cho cả bàn`);
+        speak(actorById(m.by), '💸 Để tôi trả!', 2500);
+      }
+      break;
+    }
     case 'round': {
       if (m.id === myId) state.rounds++;
       toast(`${m.id === myId ? 'Bạn' : m.name} vừa bao cả quán một két! 🍻`);
@@ -2944,10 +3018,7 @@ function pour() {
   if (!meA.seat) return toast('Ngồi vào bàn đã rồi rót nhé (click vào bàn)');
   if (busy) return;
   if (state.fill > 0.5) return toast('Ly còn đầy kìa, dzô đi! (1)');
-  const d = drinkOf(meA.seat.table);
-  state.pours[d.name] = state.pours[d.name] || { count: 0, price: d.price, icon: d.icon };
-  state.pours[d.name].count++;
-  pourSound();
+  pourSound(); // lượt rót được server ghi vào hoá đơn bàn
   playAct(meA, 'pour');
   sendAct('pour');
   busy = { t: 0, dur: 0.9, tick: (k) => setFill(k * 0.95) };
@@ -3046,50 +3117,68 @@ function passOut() {
   setTimeout(showBill, 2500);
 }
 
+// Hoá đơn chung của bàn đang ngồi. Quy tắc: gọi món rồi mới tính tiền được,
+// một người trả cho cả bàn thì những người khác không thanh toán được nữa.
 function showBill() {
+  const T = meA?.seat ? TABLES[meA.seat.table] : null;
+  const tab = T ? tabs[T.id] : null;
   const rows = [];
-  for (const [name, d] of Object.entries(state.pours)) rows.push([`${d.icon} ${name} x${d.count}`, d.count * d.price]);
-  const grouped = {};
-  [...state.dishes, ...state.extras].forEach((m) => {
-    grouped[m.name] = grouped[m.name] || { ...m, qty: 0 };
-    grouped[m.name].qty++;
-  });
-  for (const m of Object.values(grouped)) rows.push([`${m.icon} ${m.name} x${m.qty}`, m.price * m.qty]);
-  if (state.rounds) rows.push([`🍻 Bao cả quán x${state.rounds}`, state.rounds * ROUND_PRICE]);
-  const total = rows.reduce((s, r) => s + r[1], 0);
+  if (tab) {
+    const d = drinkOfTable(T);
+    if (tab.pours) rows.push([`${d.icon} ${d.name} x${tab.pours}`, tab.pours * d.price]);
+    const grouped = {};
+    tab.items.forEach((i) => {
+      const m = MENU[i];
+      grouped[m.name] = grouped[m.name] || { ...m, qty: 0 };
+      grouped[m.name].qty++;
+    });
+    for (const m of Object.values(grouped)) rows.push([`${m.icon} ${m.name} x${m.qty}`, m.price * m.qty]);
+  }
+  const total = tab ? tabTotal(T, tab) : 0;
+  const people = T ? seatedAt(T.id) + (T.npcSeats?.length || 0) : 1;
+  const extras = state.extras.reduce((s, m) => s + m.price, 0) + state.rounds * ROUND_PRICE;
   const minutes = Math.max(1, Math.round((Date.now() - state.startedAt) / 60000));
+  let status, canPay = false;
+  if (!tab) status = '🪑 Ngồi vào bàn để xem hoá đơn của bàn.';
+  else if (tab.paidBy) status = `✅ Đã thanh toán bởi <b>${tab.paidBy === myId ? 'bạn' : escapeHtml(tab.paidName || 'một người')}</b>. Gọi thêm món sẽ mở hoá đơn mới.`;
+  else if (!tab.items.length) status = '🍽️ Bàn chưa gọi món nào. <b>Gọi món trước</b> rồi mới tính tiền được.';
+  else { status = '💡 Một người trả cho cả bàn. Ai bấm thanh toán trước thì người khác không cần trả nữa.'; canPay = true; }
 
   const bill = $('bill');
   bill.innerHTML = `
-    <div><b>${SHOP_NAME}</b></div>
+    <div><b>${SHOP_NAME}</b>${T ? ` · ${escapeHtml(T.name)}` : ''}</div>
     <div>Ngồi ${minutes} phút · Dzô ${state.cheers} lần · Nước lọc ${state.waters} lần</div>
     <hr>
-    ${rows.map(([n, p]) => `<div class="row"><span>${n}</span><span>${fmt(p)}</span></div>`).join('') || '<div>Ngồi chay, không gọi gì 😅</div>'}
+    ${rows.map(([n, p]) => `<div class="row"><span>${n}</span><span>${fmt(p)}</span></div>`).join('') || '<div>Chưa có gì trên hoá đơn 😅</div>'}
     <hr>
-    <div class="row total"><span>Phần của bạn</span><span>${fmt(total)}</span></div>
+    <div class="row total"><span>Tổng cả bàn</span><span>${fmt(total)}</span></div>
+    ${T && total ? `<div class="row"><span>Nếu chia ${people} người</span><span>${fmt(Math.ceil(total / people / 1000) * 1000)}/người</span></div>` : ''}
+    ${extras ? `<div class="row"><span>Bạn đã trả riêng (lạc, bao quán)</span><span>${fmt(extras)}</span></div>` : ''}
+    <div class="bill-status ${tab?.paidBy ? 'paid' : ''}">${status}</div>
     <div class="note">🩺 Đã uống rượu bia thì không lái xe. Nhậu online thì an toàn tuyệt đối 😉</div>`;
 
-  state.billTotal = total;
+  const pay = $('btn-pay');
+  pay.disabled = !canPay;
+  pay.textContent = tab?.paidBy ? '✅ Đã thanh toán' : !tab || !tab.items.length ? '💸 Gọi món trước đã' : `💸 Thanh toán ${fmt(total)}`;
   // Đã gục thì không quay lại bàn được, chỉ còn tăng 2 hoặc về nhà.
   $('btn-bill-back').classList.toggle('hidden', state.passedOut);
-  openModal('bill');
+  if (modal !== 'bill') openModal('bill');
 }
 
 // Lưu thống kê khi kết thúc cuộc (tăng 2 / về nhà), không phải mỗi lần xem hoá đơn.
 function saveSession() {
   if (!state.started || state.saved) return;
-  showBill(); // tính lại tổng, phòng khi quay lại gọi thêm sau lần xem trước
   state.saved = true;
+  const spent = state.paid + state.extras.reduce((s, m) => s + m.price, 0) + state.rounds * ROUND_PRICE;
   const s = loadStats();
-  saveStats({ sessions: s.sessions + 1, cheers: s.cheers + state.cheers, spent: s.spent + state.billTotal });
+  saveStats({ sessions: s.sessions + 1, cheers: s.cheers + state.cheers, spent: s.spent + spent });
 }
 
 function resetSession() {
   saveSession();
   state.saved = false;
-  state.billTotal = undefined;
   Object.assign(state, {
-    drunk: 0, drunkLevel: 0, cheers: 0, waters: 0, pours: {}, dishes: [], extras: [], rounds: 0,
+    drunk: 0, drunkLevel: 0, cheers: 0, waters: 0, paid: 0, extras: [], rounds: 0,
     startedAt: Date.now(), passedOut: false,
   });
   setFill(0);
@@ -3155,6 +3244,7 @@ addEventListener('keydown', (e) => {
   keys[e.code] = true;
   if (modal) {
     if (e.code === 'Escape' && modal === 'settings') closeSettings();
+    else if (e.code === 'Escape' && modal === 'end') location.reload();
     else if (e.code === 'Escape' && modal === 'donate') closeDonate();
     else if (e.code === 'Escape' && (modal === 'elevator' || modal === 'poem')) closeModal();
     else if (e.code === 'Escape' && (modal === 'menu' || modal === 'songs' || (modal === 'bill' && !state.passedOut))) closeModal();
@@ -3512,7 +3602,9 @@ $('btn-leave').onclick = leaveForHome;
 $('btn-again').onclick = () => { resetSession(); closeModal(); toast('Tăng 2! 🍻'); };
 $('btn-home').onclick = leaveForHome;
 $('btn-bill-back').onclick = closeModal;
+$('btn-pay').onclick = () => send({ t: 'pay' });
 $('btn-return').onclick = () => location.reload();
+$('btn-end-close').onclick = () => location.reload(); // đã rời quán (ngắt kết nối), nên đóng là về màn bắt đầu
 $('btn-people').onclick = () => $('people-panel').classList.toggle('hidden');
 $('btn-sound').onclick = () => {
   muted = !muted;
@@ -3732,7 +3824,7 @@ function updateActor(a, dt, t) {
   }
   // Say thì lắc lư
   p.body.rotation.z = Math.sin(t * 1.3 + a.rx) * 0.12 * (a.d / 100);
-  p.body.position.y = (p.seated ? -0.44 : 0) + (a.singing ? Math.abs(Math.sin(t * 6)) * 0.04 : 0)
+  p.body.position.y = (p.seated ? SEAT_DROP : 0) + (a.singing ? Math.abs(Math.sin(t * 6)) * 0.04 : 0)
     + (a.dancing && !p.seated ? Math.abs(Math.sin(t * 6)) * 0.08 : 0);
 
   a.animT += dt;
@@ -3953,7 +4045,7 @@ function updateTags() {
       continue;
     }
     a.person.head.getWorldPosition(tmp);
-    tmp.y += 0.3;
+    tmp.y += 0.42;
     const dist = tmp.distanceTo(camera.position);
     const talking = a.bubbleUntil > 0;
     tmp.project(camera);
@@ -3978,6 +4070,7 @@ function sendMove() {
   send({ t: 'move', x: meA.x, z: meA.z, f: meA.f, yaw: meA.yaw, d: Math.round(state.drunk) });
 }
 
+let firstFrame = true;
 function loop() {
   const dt = Math.min(clock.getDelta(), 0.05);
   const t = clock.elapsedTime;
@@ -3999,6 +4092,11 @@ function loop() {
   updateTags();
   renderer.render(scene, camera);
   if (modal === 'start') preview.render(dt, t);
+  if (firstFrame) {
+    firstFrame = false;
+    window.__boot?.(92, 'Đang bày bàn ghế…');
+    requestAnimationFrame(() => window.__bootDone?.()); // khung hình đầu đã vẽ xong
+  }
   requestAnimationFrame(loop);
 }
 loop();
