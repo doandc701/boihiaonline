@@ -293,6 +293,13 @@ function handle(room, p, m) {
       }
       break;
     }
+    case 'refill': {
+      // Ly rỗng mà cả bàn dzô thì tự rót: tính vào hoá đơn như một lượt rót, không diễn động tác rót.
+      if (!p.seat || !cooldown(p, 'refill', 1000)) return;
+      openTab(room, p.seat.table).pours++;
+      toTable(room, p.seat.table, tabMsg(room, p.seat.table));
+      break;
+    }
     case 'order': {
       if (!Number.isInteger(m.item) || !MENU[m.item] || !p.seat || !cooldown(p, 'order', 500)) return;
       const list = room.dishes[p.seat.table];

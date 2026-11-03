@@ -2729,8 +2729,9 @@ function localServer(m) {
       localTab(meA.seat.table).items.push(m.item);
       reply({ t: 'tab', table: meA.seat.table, ...tabs[meA.seat.table] });
       break;
+    case 'refill':
     case 'act':
-      if (m.k === 'pour' && meA.seat) {
+      if ((m.t === 'refill' || m.k === 'pour') && meA.seat) {
         localTab(meA.seat.table).pours++;
         reply({ t: 'tab', table: meA.seat.table, ...tabs[meA.seat.table] });
       }
@@ -2986,7 +2987,7 @@ function onMessage(m) {
       if (!a) break;
       if (!m.ok) { toast(`${a.name} bảo để sau 😅`); break; }
       toast(`${a.name} đồng ý, dzô! 🍻`);
-      if (state.fill < 0.5) setFill(0.95);
+      refill();
       // Cùng bàn thì cái dzô của người kia kéo cả bàn (cả mình) dzô theo; khác bàn thì tự dzô.
       if (a.seat?.table !== meA.seat?.table) { if (busy) busy = null; cheers(); }
       break;
@@ -3468,7 +3469,7 @@ function cheers() {
   if (modal || state.passedOut) return;
   if (!meA.seat) return toast('Phải ngồi vào bàn mới dzô được!');
   if (busy) return;
-  if (state.fill < 0.5) return toast('Ly rỗng mà đòi dzô à? Rót đi đã! (2)');
+  refill();
   sendAct('cheers');
   onAnyAct(meA, 'cheers');
   drinkUp();
@@ -3488,12 +3489,15 @@ function tableCheers(by) {
 }
 function joinCheers() {
   if (state.passedOut || busy) return;
-  if (state.fill < 0.5) {
-    playAct(meA, 'cheers');
-    toast('Cả bàn dzô mà ly bạn rỗng! Rót đi (2)');
-    return;
-  }
+  refill();
   drinkUp();
+}
+// Ly rỗng thì tự rót đầy trước khi dzô (server tính vào hoá đơn bàn).
+function refill() {
+  if (state.fill >= 0.5) return;
+  setFill(0.95);
+  send({ t: 'refill' });
+  pourSound();
 }
 function drinkUp() {
   const T = TABLES[meA.seat.table];
@@ -3538,7 +3542,7 @@ function offerDrink(a) {
   sendAct('offer', { to: a.id });
   // Cùng ngồi thì gửi lời mời, đồng ý là dzô. Chú Ba thì lúc nào cũng nhận.
   if (!meA.seat || !a.seat) return;
-  if (state.fill < 0.5) setFill(0.95); // mời thì tự rót sẵn
+  refill(); // mời thì tự rót sẵn
   if (a === chuBa) {
     setTimeout(() => { speak(chuBa, 'Được, dzô con!', 2000); cheers(); }, 900);
     return;
@@ -3602,7 +3606,7 @@ function answerInvite(ok) {
   send({ t: 'invite-reply', to: invitedBy, ok });
   invitedBy = null;
   if (!ok || !meA.seat || state.passedOut) return;
-  if (state.fill < 0.5) setFill(0.95); // người mời rót cho
+  refill();
   if (busy) busy = null;
   cheers();
 }
