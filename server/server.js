@@ -100,26 +100,67 @@ let nextId = 1;
 
 // ---------- Ví tiền (tiền ảo) ----------
 // Mỗi trình duyệt có một mã pid riêng (lưu trong localStorage), ví gắn với pid nên vào lại vẫn còn tiền.
-// Ghi ra data/wallets.json để server khởi động lại không mất (host không có ổ đĩa lâu dài thì mất khi deploy lại).
-const WALLET_FILE = process.env.WALLET_FILE || path.join(ROOT, 'data', 'wallets.json');
-const wallets = new Map(); // pid -> { money, bag: [kind], seen }
-try {
-  for (const [pid, w] of Object.entries(JSON.parse(fs.readFileSync(WALLET_FILE, 'utf8')))) wallets.set(pid, w);
-} catch {}
-let walletsDirty = false;
-function saveWallets() {
-  if (!walletsDirty) return;
-  walletsDirty = false;
+const wallets = new Map(); // pid -> { money, bag: [kind], debt, seen }
+let walletsDirty = false; // (giữ lại cho các chỗ cũ; saveState tự so nội dung để biết có cần ghi không)
+
+// ---------- Lưu trạng thái qua các lần khởi động lại / deploy ----------
+// Lưu ví (tiền, giỏ, sổ nợ) và từng cơ sở: hoá đơn, mồi trên bàn, chat cả quán. Server mới bật lên nạp lại;
+// bàn còn hoá đơn chưa trả được giữ chỗ cho khách nối lại ngồi tiếp (xem restoreState).
+// Có UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN thì lưu lên Upstash Redis: giữ được qua deploy trên host
+// không có ổ đĩa lâu dài (Render free xoá ổ đĩa mỗi lần deploy). Không có thì ghi file data/state.json.
+const STORE = process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
+  ? { url: process.env.UPSTASH_REDIS_REST_URL.replace(/\/$/, ''), token: process.env.UPSTASH_REDIS_REST_TOKEN } : null;
+const STATE_KEY = `boihia:state:${ACTIVE_ROOMS.join(',') || 'all'}`;
+const STATE_FILE = process.env.STATE_FILE || process.env.WALLET_FILE || path.join(ROOT, 'data', 'state.json');
+async function redis(cmd) {
+  const r = await fetch(STORE.url, {
+    method: 'POST', headers: { Authorization: `Bearer ${STORE.token}` }, body: JSON.stringify(cmd), signal: AbortSignal.timeout(5000),
+  });
+  if (!r.ok) throw new Error(`Upstash ${r.status}`);
+  return (await r.json()).result;
+}
+async function readState() {
+  try {
+    const raw = STORE ? await redis(['GET', STATE_KEY]) : fs.readFileSync(STATE_FILE, 'utf8');
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    if (STORE) console.error('readState', e.message);
+    return null;
+  }
+}
+function snapshot() {
   const cutoff = Date.now() - 60 * 24 * 3600 * 1000; // bỏ ví không ai vào 60 ngày
   for (const [pid, w] of wallets) if (w.seen < cutoff) wallets.delete(pid);
-  try {
-    fs.mkdirSync(path.dirname(WALLET_FILE), { recursive: true });
-    fs.writeFileSync(WALLET_FILE + '.tmp', JSON.stringify(Object.fromEntries(wallets)));
-    fs.renameSync(WALLET_FILE + '.tmp', WALLET_FILE);
-  } catch (e) { console.error('saveWallets', e.message); }
+  return {
+    at: Date.now(),
+    wallets: Object.fromEntries(wallets),
+    rooms: Object.fromEntries([...rooms].map(([id, r]) => [id, { tabs: r.tabs, dishes: r.dishes, chatAll: r.chatAll }])),
+  };
 }
-setInterval(saveWallets, 30000).unref();
-for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { saveWallets(); process.exit(0); });
+let lastSaved = '';
+async function saveState() {
+  const json = JSON.stringify(snapshot());
+  if (json === lastSaved) return;
+  try {
+    if (STORE) await redis(['SET', STATE_KEY, json]);
+    else {
+      fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
+      fs.writeFileSync(STATE_FILE + '.tmp', json);
+      fs.renameSync(STATE_FILE + '.tmp', STATE_FILE);
+    }
+    lastSaved = json;
+  } catch (e) { console.error('saveState', e.message); }
+}
+setInterval(saveState, 30000).unref();
+// Tắt server (deploy bản mới, Render chuyển máy...): báo khách để họ tự nối lại, lưu trạng thái rồi mới thoát.
+let shuttingDown = false;
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, async () => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  for (const room of rooms.values()) broadcast(room, { t: 'restart' });
+  await Promise.race([saveState(), new Promise((r) => setTimeout(r, 6000))]);
+  process.exit(0);
+});
 function walletOf(pid) {
   if (!wallets.has(pid)) wallets.set(pid, { money: START_MONEY, bag: [], seen: Date.now() });
   const w = wallets.get(pid);
@@ -1012,4 +1053,35 @@ if (DEV) {
 }
 
 if (!rooms.size) throw new Error(`ROOMS=${process.env.ROOMS} không khớp cơ sở nào trong shared/world.js`);
+// Nạp trạng thái lần chạy trước (ví, hoá đơn, mồi trên bàn, chat) trước khi mở cửa đón khách.
+function restoreState(data) {
+  // File ví kiểu cũ (data/wallets.json) chỉ có danh sách ví.
+  const ws = data.wallets || (data.rooms ? {} : data);
+  for (const [pid, w] of Object.entries(ws)) if (w && typeof w.money === 'number') wallets.set(pid, w);
+  for (const [id, saved] of Object.entries(data.rooms || {})) {
+    const room = rooms.get(id);
+    if (!room || !Array.isArray(saved.tabs)) continue;
+    room.chatAll = Array.isArray(saved.chatAll) ? saved.chatAll.slice(-CHAT_ALL_KEEP) : [];
+    TABLES.forEach((T, table) => {
+      const t = saved.tabs[table] || {}, tab = newTab();
+      tab.items = (t.items || []).filter((i) => Number.isInteger(i) && MENU[i]);
+      tab.pours = Number.isInteger(t.pours) ? t.pours : 0;
+      tab.paidBy = t.paidBy || null;
+      tab.paidName = t.paidName || null;
+      tab.owed = t.owed && typeof t.owed === 'object' ? t.owed : {};
+      tab.members = Array.isArray(t.members) ? t.members : [];
+      room.tabs[table] = tab;
+      room.dishes[table] = (saved.dishes?.[table] || []).filter((i) => Number.isInteger(i) && MENU[i]);
+      // Lúc này chưa ai ngồi: bàn còn nợ thì giữ chỗ cho khách nối lại, không thì dọn.
+      if (!tab.paidBy && tabTotal(T, tab) > 0) holdTable(room, table);
+      else clearTable(room, table);
+    });
+  }
+}
+const savedState = await readState();
+if (savedState) {
+  restoreState(savedState);
+  lastSaved = JSON.stringify(snapshot());
+  console.log(`Nạp lại trạng thái lúc ${new Date(savedState.at || Date.now()).toLocaleString('vi-VN')}: ${wallets.size} ví`);
+}
 server.listen(PORT, () => console.log(`🍻 Bơi Hia Dứt Cạn đang mở cửa: http://localhost:${PORT} · ${[...rooms.keys()].join(', ')}${DEV ? '  (dev: sửa file là tự cập nhật)' : ''}`));

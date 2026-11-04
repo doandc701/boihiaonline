@@ -53,6 +53,8 @@ Mở nhiều tab hoặc nhiều máy trong cùng mạng là thấy nhau.
 | `MAX_CONN_PER_IP` | Số kết nối tối đa mỗi IP |
 | `WALLET_FILE` | File lưu ví người chơi (mặc định `data/wallets.json`) |
 | `YOUTUBE_API_KEY` | Không bắt buộc. Có key thì tìm bài trên YouTube bằng API chính thức (ổn định hơn) |
+| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Lưu ví, hoá đơn, mồi trên bàn lên Upstash Redis để deploy lại không mất. Không có thì lưu file `data/state.json` |
+| `HOLD_MS` | Thời gian giữ chỗ bàn chưa trả tiền, mặc định 180000 (3 phút) |
 
 ## Triển khai
 

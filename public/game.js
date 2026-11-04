@@ -3746,7 +3746,7 @@ function actorById(id) {
 
 // ================= Mạng =================
 // sameOrigin: trang có được chính server game phục vụ không (null = chưa biết, loadRooms sẽ xác định).
-const net = { ws: null, online: false, offset: 0, lastSent: 0, lastKey: '', sameOrigin: null };
+const net = { ws: null, online: false, offset: 0, lastSent: 0, lastKey: '', sameOrigin: null, everOnline: false, retries: 0, rejoin: null, restarting: false };
 const serverNow = () => Date.now() + net.offset;
 // Đo độ lệch đồng hồ với server: gửi vài mẫu, lấy mẫu đi về nhanh nhất (ít bị trễ mạng nhất),
 // cộng nửa thời gian đi về. Đo lại mỗi phút để mọi máy nghe bài karaoke cùng một chỗ.
@@ -3788,13 +3788,21 @@ function connect() {
   };
   ws.onclose = () => {
     if (state.leaving || net.full) return;
-    if (!welcomed) { goOffline(); return; }
-    net.online = false;
-    toast('Mất kết nối, đang nối lại…');
-    for (const id of [...remotes.keys()]) removeRemote(id);
-    if (meA.seat) unseatActor(meA);
-    updateBillButton();
-    setTimeout(connect, 2000);
+    // Lần đầu đã không vào được thì chơi một mình; đã từng vào rồi (server deploy lại, mạng chập chờn) thì nối lại mãi.
+    if (!welcomed && !net.everOnline) { goOffline(); return; }
+    if (welcomed) {
+      net.online = false;
+      // Nhớ chỗ đang đứng/ngồi để nối lại xong đặt về đúng chỗ, ngồi lại đúng bàn.
+      net.rejoin = { table: meA.seat?.table, x: meA.x, z: meA.z, f: meA.f, yaw: meA.yaw };
+      net.retries = 0;
+      toast(net.restarting ? '🔧 Quán đang nâng cấp, vài giây nữa vào lại…' : 'Mất kết nối, đang nối lại…');
+      for (const id of [...remotes.keys()]) removeRemote(id);
+      if (meA.seat) unseatActor(meA);
+      updateBillButton();
+    }
+    // Thử lại sau 1, 2, 3… tối đa 5 giây; server miễn phí khởi động lại có thể mất cả phút.
+    if (++net.retries > 60) { goOffline(); return; }
+    setTimeout(connect, Math.min(5000, 1000 * net.retries));
   };
 }
 
@@ -3937,7 +3945,17 @@ function onMessage(m) {
       m.dishes.forEach((items, table) => items.forEach((item) => serveDish(table, item, true)));
       features = m.features || features;
       setMic(m.mic);
-      placeAt(meA, spawnSpot().x, SPAWN.z, SPAWN.yaw, 0);
+      if (net.rejoin) {
+        // Nối lại sau khi rớt mạng / server deploy: đứng lại chỗ cũ, đang ngồi thì ngồi lại bàn cũ.
+        const r = net.rejoin;
+        placeAt(meA, r.x, r.z, r.yaw, r.f);
+        if (r.table !== undefined) send({ t: 'sit', table: r.table });
+        toast('✅ Đã vào lại quán, nhậu tiếp thôi!');
+      } else placeAt(meA, spawnSpot().x, SPAWN.z, SPAWN.yaw, 0);
+      net.rejoin = null;
+      net.everOnline = true;
+      net.retries = 0;
+      net.restarting = false;
       roomState.clear();
       (m.rooms || []).forEach((rm) => onMessage(rm));
       (m.tabs || []).forEach((tb) => onMessage(tb));
@@ -4154,6 +4172,10 @@ function onMessage(m) {
       break;
     case 'clock':
       onClock(m);
+      break;
+    case 'restart':
+      net.restarting = true; // server sắp tắt để lên bản mới: lát nữa tự nối lại
+      toast('🔧 Quán đang nâng cấp, vài giây nữa vào lại…');
       break;
     case 'yt-results':
       renderYouTube(m);
