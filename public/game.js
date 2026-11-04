@@ -2521,7 +2521,7 @@ function loadYT() {
   return ytReady;
 }
 
-const tv = { player: null, ready: false, yt: null, startAt: 0, failed: false, local: false, localMute: false, fallbackTimer: null };
+const tv = { player: null, ready: false, yt: null, startAt: 0, failed: false, local: false, localMute: false, fallbackTimer: null, stuck: 0 };
 
 // Bài có file nhạc riêng trong public/music (chủ quán đã mua bản quyền): phát file thay cho video YouTube cùng ID.
 // Không tải được file (thiếu file, mất mạng) thì quay về video YouTube. Phát bằng Web Audio để khớp giờ server
@@ -2593,7 +2593,7 @@ async function playVideo(track, startAt) {
         onReady: () => {
           tv.ready = true;
           // Đổi bài trong lúc player còn khởi tạo thì giờ mới nạp bài mới.
-          if (tv.yt && tv.player.getVideoData?.().video_id !== tv.yt) {
+          if (tv.yt && tv.player.getVideoData?.()?.video_id !== tv.yt) {
             tv.player.loadVideoById({ videoId: tv.yt, startSeconds: Math.max(0, (serverNow() - tv.startAt) / 1000) });
           }
           syncVideo();
@@ -2606,13 +2606,44 @@ async function playVideo(track, startAt) {
       },
     });
   } else if (tv.ready) {
-    tv.player.loadVideoById({ videoId: track.yt, startSeconds: start });
+    // Đã nạp sẵn đúng video (lúc bấm chọn bài) thì chỉ tua tới đúng chỗ, không nạp lại.
+    if (tv.player.getVideoData?.()?.video_id === track.yt) {
+      tv.player.seekTo(start, true);
+      tv.player.playVideo();
+    } else tv.player.loadVideoById({ videoId: track.yt, startSeconds: start });
   }
+  tv.stuck = 0;
   syncVideo();
 }
 
+// Điện thoại chỉ cho video phát có tiếng khi được gọi ngay trong lúc người dùng chạm.
+// Bấm chọn bài là một lần chạm, nên nạp luôn video mới vào player lúc đó.
+function primeVideo(yt) {
+  if (!yt || LOCAL_AUDIO[yt] || !tv.player || !tv.ready) return;
+  try {
+    tv.player.loadVideoById({ videoId: yt, startSeconds: 0 });
+    tv.player.unMute();
+  } catch {}
+}
+function showTvPlay(on) {
+  $('tv-play').classList.toggle('hidden', !on);
+}
+$('tv-play').onclick = () => {
+  showTvPlay(false);
+  tv.stuck = 0;
+  ac().resume();
+  const p = tv.player;
+  if (!p || !tv.yt) return;
+  try {
+    p.seekTo(Math.max(0, (serverNow() - tv.startAt) / 1000), true);
+    p.unMute();
+    p.playVideo();
+  } catch {}
+};
+
 function stopVideo() {
   clearTimeout(tv.fallbackTimer);
+  showTvPlay(false);
   tv.yt = null;
   tv.local = false;
   stopLocal();
@@ -2624,6 +2655,7 @@ function stopVideo() {
 function videoFailed() {
   if (!tv.yt || tv.failed) return;
   tv.failed = true;
+  showTvPlay(false);
   if (tv.local) return; // tiếng vẫn phát từ file, màn chiếu hiện tên bài
   toast('Video này không phát được ở đây, chuyển sang beat tự chế 🎹');
   playSong(mic.song, mic.startAt);
@@ -2653,7 +2685,14 @@ function syncVideo() {
     if (st === 1) p.pauseVideo();
     return;
   }
-  if (st === -1 || st === 2 || st === 5) p.playVideo();
+  if (st === -1 || st === 2 || st === 5) {
+    p.playVideo();
+    // Vẫn không chạy sau vài giây: trình duyệt chặn tự phát, nhờ người xem chạm một cái.
+    if (++tv.stuck >= 3) showTvPlay(true);
+  } else if (st === 1) {
+    tv.stuck = 0;
+    showTvPlay(false);
+  }
   if (st === 1 && Math.abs(p.getCurrentTime() - elapsed) > 2.5) p.seekTo(elapsed, true);
   const level = karaokeLevel();
   p.setVolume(Math.round(settings.karaoke * level));
@@ -2783,6 +2822,7 @@ function renderYouTube(m) {
 
 function joinMic(payload, title) {
   const change = mic.singer === myId;
+  if (change) primeVideo(payload.url ? parseYouTube(payload.url) : SONGS.find((s) => s.id === payload.song)?.yt);
   send({ t: 'mic-join', ...payload, change });
   closeModal();
   toast(change ? `🎵 Đổi sang “${title}”` : `Đã xếp hàng hát “${title}” 🎤`);

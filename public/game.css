@@ -133,6 +133,9 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
 
 .mic-bar { position: absolute; left: 50%; top: max(12px, env(safe-area-inset-top)); transform: translateX(-50%); background: #3a0d4add; color: #fff; border: 1px solid #e040fb88; border-radius: 12px; padding: 6px 12px; font-size: .85rem; display: flex; gap: 10px; align-items: center; pointer-events: auto; max-width: calc(100% - 220px); }
 .mic-bar button { padding: 4px 10px; font-size: .8rem; }
+/* Điện thoại chặn video tự phát có tiếng: hiện nút để người xem chạm vào là phát */
+.tv-play { position: absolute; left: 50%; top: calc(58px + env(safe-area-inset-top)); transform: translateX(-50%); pointer-events: auto; background: #e53935; color: #fff; box-shadow: 0 4px 14px #0006; animation: tvPulse 1.2s ease-in-out infinite; }
+@keyframes tvPulse { 50% { transform: translateX(-50%) scale(1.06); } }
 
 .golden { position: absolute; left: 50%; top: 30%; transform: translate(-50%, -50%); text-align: center; font-weight: 900; text-shadow: 0 0 20px #f2a900, 0 2px 4px #000; width: 100%; padding: 0 12px; }
 .golden .big-text { font-size: clamp(2.5rem, 10vw, 6rem); color: #ffe082; }
@@ -362,6 +365,7 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
   .top-right { gap: 6px; }
   .bar { width: 80px; }
   .mic-bar { top: calc(120px + env(safe-area-inset-top)); max-width: calc(100% - 24px); font-size: .78rem; }
+  .tv-play { top: calc(166px + env(safe-area-inset-top)); }
   .side { top: 140px; width: min(260px, calc(100% - 24px)); }
   .tv { top: auto; bottom: calc(150px + env(safe-area-inset-bottom)); width: min(320px, calc(100% - 24px)); }
   .golden .sub-text { font-size: .95rem; }
