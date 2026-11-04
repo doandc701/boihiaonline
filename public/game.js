@@ -2345,31 +2345,21 @@ function roamTick(f, spotOf, lines, anyChance = 0) {
   };
 }
 const tableSpot = (T) => ({ x: T.x, z: T.z }); // tới sát bàn (đường đi tự dừng ở ô trống cạnh bàn)
+// Mỗi tầng một em order giống nhau: đi vòng ghé bàn có khách hỏi gọi món (chỉ diễn hoạt, gọi món bằng nút 📜).
+// Tầng 2 là phòng riêng nên em đứng ngoài hành lang trước cửa.
 orderTaker.tick = roamTick(0, tableSpot, LINES.orderTaker, 0.3);
-// Tầng 2: em phục vụ đi dọc hành lang ghé cửa những phòng có khách. Sân thượng: em bưng Tèo rảnh thì đi hỏi order.
+const ORDER_LOOK = { shirt: 0x2e7d32, female: true };
+const orderTaker2 = addStaff({ ...ORDER_LOOK, hair: 0x3e2723 }, 'Em order Nhi', 1, 2.2, -8.5, 0, { wait: 4, home: { x: 2.2, z: -8.5, yaw: 0 } });
+orderTaker2.speed = 1.3;
+orderTaker2.tick = roamTick(1, (T) => ({ x: T.x, z: -8.5 }), LINES.orderTaker, 0.3);
+const orderTaker3 = addStaff({ ...ORDER_LOOK, hair: 0x1b1b1b }, 'Em order Thư', 2, 2.6, -2.6, Math.PI, { wait: 5, home: { x: 2.6, z: -2.6, yaw: Math.PI } });
+orderTaker3.speed = 1.3;
+orderTaker3.tick = roamTick(2, tableSpot, LINES.orderTaker, 0.3);
+// Em phục vụ tầng 2 và em bưng Tèo sân thượng chỉ bưng bê (lấy món ở thang tời rồi mang tới bàn).
 const waiterSt = { a: waiter, speed: 1.8, route: [], then: null, wait: 4, home: { x: 4.2, z: -14.4, yaw: 0 } };
 staff.push(waiterSt);
-waiterSt.tick = roamTick(1, (T) => ({ x: T.x, z: -8.5 }), LINES.orderTaker);
-// Em phục vụ tầng 2 kiêm bưng bê: lấy món ở thang tời rồi bưng vào tận phòng.
 waiterSt.tray = addTray(waiter);
 runners.push(waiterSt);
-const teo = runners[2];
-teo.wait = 4;
-teo.tick = roamTick(2, tableSpot, LINES.orderTaker);
-clickable(add(new THREE.CylinderGeometry(0.5, 0.5, 1.8, 8), HIT_MAT, 0, 0.9, 0, teo.a.person.root), {
-  f: 2,
-  pos: () => teo.a,
-  range: 1.8,
-  label: () => 'gọi món với <b>em Tèo</b>',
-  action: () => { speak(teo.a, 'Dạ anh chị gọi gì ạ?'); openMenu(); },
-});
-clickable(add(new THREE.CylinderGeometry(0.5, 0.5, 1.8, 8), HIT_MAT, 0, 0.9, 0, orderTaker.a.person.root), {
-  f: 0,
-  pos: () => orderTaker.a,
-  range: 1.8,
-  label: () => 'gọi món với <b>em order</b>',
-  action: () => { speak(orderTaker.a, 'Anh chị dùng gì ạ? Em ghi luôn!'); openMenu(); },
-});
 for (const [st, lines] of [[chef2, LINES.chef], [washer, LINES.dishwasher], [prep, LINES.prep]]) {
   clickable(add(new THREE.CylinderGeometry(0.5, 0.5, 1.8, 8), HIT_MAT, 0, 0.9, 0, st.a.person.root), {
     f: 0,
@@ -5797,10 +5787,11 @@ function pickAt(x, y, skip) {
   const here = clickables.filter((o) => o !== skip && floorOf(o.userData.click) === f);
   const hits = raycaster.intersectObjects(here, false).filter((h) => h.object !== meA?.hit);
   if (hits.length) {
-    // Vùng bấm của bàn to, hay trùm lên người đứng sát bàn (em order, khách): người ngay sau mép bàn thì ưu tiên người.
+    // Vùng bấm của bàn to (trùm cả ghế quanh bàn), hay che người đứng cạnh hay bên kia bàn (em order, khách):
+    // tia bấm có trúng người nằm trong khoảng một cái bàn phía sau thì ưu tiên người.
     const first = hits[0];
     if (first.object.userData.click.tableId !== undefined) {
-      const person = hits.find((h) => h.object.userData.click.tableId === undefined && h.distance - first.distance < 1.6);
+      const person = hits.find((h) => h.object.userData.click.tableId === undefined && h.distance - first.distance < 3.5);
       if (person) return { info: person.object.userData.click };
     }
     return { info: first.object.userData.click };
