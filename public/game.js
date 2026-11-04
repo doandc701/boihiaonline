@@ -1483,9 +1483,11 @@ const strobe = pointLight(F3, 0xffffff, 0, 10, STAGE.x - 0.5, TRUSS.y - 0.3, STA
 box(0.3, 0.1, 0.12, 0xeeeeee, TRUSS.front, TRUSS.y + 0.12, STAGE.z + 1.2, F3);
 
 // Màn LED: hai tấm hai bên màn chiếu và băng LED trên giàn trước, vẽ hiệu ứng động
-function ledPanel(w, h, cw, ch, x, y, z, rotY) {
+// pixel: true thì giữ ô vuông to (kiểu bảng LED hạt), false thì vẽ nét mịn (băng chữ chạy).
+function ledPanel(w, h, cw, ch, x, y, z, rotY, pixel = true) {
   const tex = canvasTexture(cw, ch, (g) => { g.fillStyle = '#000'; g.fillRect(0, 0, cw, ch); });
-  tex.magFilter = THREE.NearestFilter;
+  if (pixel) tex.magFilter = THREE.NearestFilter;
+  else tex.anisotropy = renderer.capabilities.getMaxAnisotropy(); // nhìn xiên vẫn nét
   const m = add(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, fog: false }), x, y, z, F3);
   m.rotation.y = rotY;
   return { tex, g: tex.image.getContext('2d'), w: cw, h: ch };
@@ -1495,7 +1497,8 @@ const ledSides = [-1, 1].map((s) => {
   return ledPanel(0.8, 1.6, 24, 48, STAGE.x + 1.7, 1.75, STAGE.z + s * 1.75, -Math.PI / 2);
 });
 box(0.06, 0.36, TRUSS.z1 - TRUSS.z0 - 0.3, 0x111111, TRUSS.front - 0.04, TRUSS.y + 0.3, STAGE.z, F3);
-const ledTop = ledPanel(TRUSS.z1 - TRUSS.z0 - 0.4, 0.3, 160, 12, TRUSS.front - 0.08, TRUSS.y + 0.3, STAGE.z, -Math.PI / 2);
+// Băng chữ chạy: vẽ ở độ phân giải cao (1280×96) cho chữ nét, không bị vỡ hạt.
+const ledTop = ledPanel(TRUSS.z1 - TRUSS.z0 - 0.4, 0.3, 1280, 96, TRUSS.front - 0.08, TRUSS.y + 0.3, STAGE.z, -Math.PI / 2, false);
 const LED_TEXT = '★ BƠI HIA DỨT CẠN ★ KARAOKE ★ DZÔ ★ ';
 function drawLeds(t, level) {
   const hue = (t * 40) % 360;
@@ -1517,11 +1520,15 @@ function drawLeds(t, level) {
   const { g, w, h } = ledTop;
   g.fillStyle = '#000';
   g.fillRect(0, 0, w, h);
-  g.font = 'bold 11px sans-serif';
+  g.font = 'bold 70px sans-serif';
   g.textBaseline = 'middle';
-  g.fillStyle = level ? `hsl(${hue} 100% 60%)` : '#ff4081';
-  const tw = g.measureText(LED_TEXT).width, off = -((t * 30) % tw);
-  for (let x = off; x < w; x += tw) g.fillText(LED_TEXT, x, h / 2 + 1);
+  const color = level ? `hsl(${hue} 100% 62%)` : '#ff4081';
+  g.fillStyle = color;
+  g.shadowColor = color; // quầng sáng nhẹ như đèn LED
+  g.shadowBlur = 14;
+  const tw = g.measureText(LED_TEXT).width, off = -((t * 240) % tw);
+  for (let x = off; x < w; x += tw) g.fillText(LED_TEXT, x, h / 2 + 4);
+  g.shadowBlur = 0;
   ledTop.tex.needsUpdate = true;
 }
 drawLeds(0, 0);
