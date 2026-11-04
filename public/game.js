@@ -1,6 +1,7 @@
 // Bơi Hia Dứt Cạn — quán nhậu 3D nhiều người: ngồi chung bàn, không chat, chỉ có hành động.
 import * as THREE from 'three';
 import { CSS3DRenderer, CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 window.__boot?.(65, 'Đang dựng quán…');
 import {
   ROOMS, TABLES, STAGE, MENU, MENU_CATS, SHIRTS, HAIRS, SONG_MS, MIC_DELAY_MS,
@@ -1666,40 +1667,110 @@ function updateStageFx(dt, t) {
 
 // ---------- Bàn & ghế ----------
 const glassMat = mat(0x1d6b35, { roughness: 0.15, metalness: 0.1 });
-const STOOL = { 'Vỉa hè': 0xd62828, 'Trong nhà': 0xd62828, 'Phòng riêng': 0x6d4c41, 'Sân thượng': 0x1e88e5 };
+// Bàn ghế nhựa kiểu Song Long, hai màu vàng / đỏ xen kẽ theo bàn.
+const PLASTIC = [0xf9c80e, 0xd7262e];
+const plasticMats = PLASTIC.map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.38, metalness: 0 }));
+const partBox = (w, h, d, x, y, z, rx = 0, rz = 0) => {
+  const g = new THREE.BoxGeometry(w, h, d);
+  if (rx) g.rotateX(rx);
+  if (rz) g.rotateZ(rz);
+  return g.translate(x, y, z);
+};
+// Bàn nhựa liền khối (kiểu Duy Tân): khung 1 x 1 co giãn theo kích thước từng bàn, mặt cao 0.57
+// có hoa văn chữ thập nổi; bốn mặt yếm liền xuống thành chân bản to, khoét vòm giữa hai chân, chân hơi choãi.
+const tableGeo = (() => {
+  const parts = [partBox(1, 0.05, 1, 0, 0.545, 0)];
+  for (let i = 0; i < 7; i++) for (let j = 0; j < 5; j++) {
+    const x = -0.39 + i * 0.13, z = -0.36 + j * 0.18 + (i % 2) * 0.09;
+    if (Math.abs(z) > 0.42) continue;
+    parts.push(partBox(0.07, 0.008, 0.012, x, 0.573, z), partBox(0.012, 0.008, 0.07, x, 0.573, z));
+  }
+  const side = new THREE.Shape();
+  side.moveTo(-0.5, 0.55);
+  side.lineTo(0.5, 0.55);
+  side.lineTo(0.5, 0);
+  side.lineTo(0.37, 0);
+  side.lineTo(0.35, 0.3);
+  side.quadraticCurveTo(0.33, 0.43, 0.2, 0.43);
+  side.lineTo(-0.2, 0.43);
+  side.quadraticCurveTo(-0.33, 0.43, -0.35, 0.3);
+  side.lineTo(-0.37, 0);
+  side.lineTo(-0.5, 0);
+  side.lineTo(-0.5, 0.55);
+  const panel = new THREE.ExtrudeGeometry(side, { depth: 0.04, bevelEnabled: false, curveSegments: 8 });
+  panel.translate(0, 0, -0.02);
+  for (const [ry, dist] of [[0, 0.48], [Math.PI, 0.48], [Math.PI / 2, 0.48], [-Math.PI / 2, 0.48]]) {
+    const g = panel.clone();
+    g.translate(0, -0.55, 0).rotateX(-0.07).translate(0, 0.55, dist); // choãi ra ngoài
+    g.rotateY(ry);
+    parts.push(g);
+  }
+  return mergeGeometries(parts.map((g) => (g.index ? g.toNonIndexed() : g)));
+})();
+// Ghế nhựa liền khối (kiểu ghế Song Long): nhìn về +z (phía bàn), mặt ngồi cao 0.34 có viền,
+// 4 chân vuông to thuôn dần và hơi choãi, tựa lưng cao bo tròn đầu với 2 lỗ ô van lớn và 2 khe dọc ở giữa.
+const chairGeo = (() => {
+  const parts = [partBox(0.44, 0.04, 0.42, 0, 0.32, 0)];
+  for (const z of [-0.2, 0.2]) parts.push(partBox(0.44, 0.06, 0.02, 0, 0.28, z));
+  for (const x of [-0.21, 0.21]) parts.push(partBox(0.02, 0.06, 0.42, x, 0.28, 0));
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const leg = new THREE.CylinderGeometry(0.05, 0.036, 0.32, 4, 1);
+    leg.rotateY(Math.PI / 4);
+    leg.rotateX(sz * 0.1);
+    leg.rotateZ(-sx * 0.1);
+    parts.push(leg.translate(sx * 0.18, 0.15, sz * 0.17));
+  }
+  const back = new THREE.Shape();
+  back.moveTo(-0.2, 0);
+  back.lineTo(0.2, 0);
+  back.lineTo(0.215, 0.36);
+  back.quadraticCurveTo(0.22, 0.5, 0.08, 0.5);
+  back.lineTo(-0.08, 0.5);
+  back.quadraticCurveTo(-0.22, 0.5, -0.215, 0.36);
+  back.lineTo(-0.2, 0);
+  for (const [x, rx, ry] of [[-0.12, 0.06, 0.15], [0.12, 0.06, 0.15], [-0.032, 0.012, 0.13], [0.032, 0.012, 0.13]]) {
+    const hole = new THREE.Path();
+    hole.absellipse(x, 0.25, rx, ry, 0, Math.PI * 2, true);
+    back.holes.push(hole);
+  }
+  const bg = new THREE.ExtrudeGeometry(back, { depth: 0.025, bevelEnabled: false, curveSegments: 12 });
+  bg.rotateX(-0.2);
+  parts.push(bg.translate(0, 0.33, -0.23));
+  return mergeGeometries(parts.map((g) => g.toNonIndexed()));
+})();
+// Gom ma trận theo tầng + màu, dựng xong mới tạo InstancedMesh (mỗi tầng mỗi màu một lần vẽ)
+const plasticBatch = new Map();
+const tmpMatrix = new THREE.Matrix4(), tmpQuat = new THREE.Quaternion(), tmpScale = new THREE.Vector3(), tmpPos = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
+function placePlastic(kind, floor, color, x, z, yaw, sx = 1, sz = 1) {
+  const key = `${kind}|${floor}|${color}`;
+  if (!plasticBatch.has(key)) plasticBatch.set(key, { kind, floor, color, list: [] });
+  tmpQuat.setFromAxisAngle(UP, yaw);
+  plasticBatch.get(key).list.push(tmpMatrix.compose(tmpPos.set(x, 0, z), tmpQuat, tmpScale.set(sx, 1, sz)).clone());
+}
+// Bàn tròn cũ đổi thành bàn chữ nhật: ghế vẫn xếp quanh, mặt bàn đủ rộng để ly và mồi.
+const tableSize = (T) => ({ w: T.r * 1.9, d: T.r * 1.5 });
 // Điểm ngẫu nhiên trên mặt bàn (để đặt chai, đĩa mồi)
 function spotOnTable(T) {
   if (T.shape === 'long') return { x: T.x + (Math.random() - 0.5) * (T.len - 0.3), z: T.z + (Math.random() - 0.5) * (T.w - 0.3) };
-  const a = Math.random() * Math.PI * 2, r = Math.random() * (T.r - 0.2);
-  return { x: T.x + Math.sin(a) * r, z: T.z + Math.cos(a) * r };
+  const { w, d } = tableSize(T);
+  return { x: T.x + (Math.random() - 0.5) * (w - 0.3), z: T.z + (Math.random() - 0.5) * (d - 0.3) };
 }
 for (const T of TABLES) {
   const P = floors[T.floor];
-  const top = T.private ? mat(0x795548, { roughness: 0.5 }) : mat(0xb0b8c0, { metalness: 0.6, roughness: 0.35 });
+  const color = T.id % 2;
   if (T.shape === 'long') {
-    // Ghép nhiều bàn vuông thành bàn dài cho nhóm 10–12 người
+    // Ghép nhiều bàn nhựa thành bàn dài cho nhóm 10–12 người
     const piece = T.len / T.pieces;
-    for (let k = 0; k < T.pieces; k++) {
-      const px = T.x - T.len / 2 + piece * (k + 0.5);
-      box(piece - 0.03, 0.04, T.w, top, px, 0.55, T.z, P);
-      for (const [lx, lz] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) {
-        cyl(0.02, 0.02, 0.55, 0x90a4ae, px + lx * (piece / 2 - 0.08), 0.27, T.z + lz * (T.w / 2 - 0.08), P);
-      }
-    }
+    for (let k = 0; k < T.pieces; k++) placePlastic('table', T.floor, color, T.x - T.len / 2 + piece * (k + 0.5), T.z, 0, piece - 0.03, T.w);
     solidBox(T.floor, T.x, T.z, T.len + 0.3, T.w + 1.3);
   } else {
-    cyl(T.r, T.r, 0.04, top, T.x, 0.55, T.z, P);
-    for (let i = 0; i < 4; i++) {
-      const a = Math.PI / 4 + (i * Math.PI) / 2;
-      cyl(0.02, 0.02, 0.55, 0x90a4ae, T.x + Math.sin(a) * (T.r - 0.15), 0.27, T.z + Math.cos(a) * (T.r - 0.15), P);
-    }
+    const { w, d } = tableSize(T);
+    placePlastic('table', T.floor, color, T.x, T.z, 0, w, d);
     solidCircle(T.floor, T.x, T.z, T.r + 0.65);
   }
-  const sc = STOOL[T.area] ?? 0xd62828;
   for (let i = 0; i < T.seats; i++) {
     const s = seatPos(T, i);
-    cyl(0.16, 0.16, 0.04, sc, s.x, 0.32, s.z, P);
-    cyl(0.14, 0.19, 0.3, sc, s.x, 0.15, s.z, P);
+    placePlastic('chair', T.floor, color, s.x, s.z, seatYaw(T, i));
   }
   for (let i = 0; i < 2 + (T.pieces || 1); i++) {
     const s = spotOnTable(T);
@@ -1724,6 +1795,12 @@ for (const T of TABLES) {
     },
     action: () => send({ t: 'sit', table: T.id }),
   });
+}
+for (const { kind, floor, color, list } of plasticBatch.values()) {
+  const im = new THREE.InstancedMesh(kind === 'table' ? tableGeo : chairGeo, plasticMats[color], list.length);
+  list.forEach((m, i) => im.setMatrixAt(i, m));
+  im.computeBoundingSphere();
+  floors[floor].add(im);
 }
 
 // ================= Nhân vật =================
@@ -3607,6 +3684,12 @@ function setMic(m) {
     stopSong();
     stopVideo();
   }
+  // Hết lượt hát (hết bài, bấm Dừng hát, hay tới lượt người khác): tự bước xuống sàn nhường sân khấu.
+  // Đã bấm đi chỗ khác thì đi theo chỗ đó.
+  if (wasSinging && mic.singer !== myId && meA && onStage(meA) && !moveTarget) {
+    walkTo(STAGE.x - STAGE.w / 2 - 1.3, STAGE.z + (Math.random() - 0.5) * 2.5);
+    speak(meA, '🙇 Cảm ơn mọi người!', 2500);
+  }
   applyVolumes(); // có người hát thì tắt nhạc nền
   if (!mic.singer) for (const a of allActors()) a.dancing = false;
   renderMicBar();
@@ -5049,7 +5132,7 @@ function updateActor(a, dt, t) {
     p.cup.scale.setScalar(1.3);
   } else if (!inHand && p.cup.parent !== p.root) {
     p.root.add(p.cup);
-    p.cup.position.set(-0.16, 0.66, 0.6); // mặt bàn cao 0.57, ly to hơn cho dễ nhìn
+    p.cup.position.set(-0.16, 0.66, 0.7); // mặt bàn cao 0.57, ly to hơn cho dễ nhìn
     p.cup.rotation.set(0, 0, 0);
     p.cup.scale.setScalar(1.8);
   }
