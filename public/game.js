@@ -3047,6 +3047,7 @@ const settings = {
   music: 20, ambience: 70, sfx: 80, karaoke: 80, // âm lượng 0–100
   musicPicked: false, // người chơi đã tự chỉnh âm lượng nhạc nền chưa
   bgPlay: false, // phát tiếp khi chuyển tab
+  voiceSpk: 'all', // thoại: vào quán là tự nghe kênh Cả quán ('all'), hoặc 'off' nếu người chơi đã chọn Đóng
   quality: 'high', // điện thoại cũng mặc định Đẹp; ai cần pin thì tự chọn Tiết kiệm pin
   qualityPicked: false, // người chơi đã tự chọn chất lượng đồ hoạ chưa
   names: true,
@@ -3952,7 +3953,8 @@ function onMessage(m) {
       m.dishes.forEach((items, table) => items.forEach((item) => serveDish(table, item, true)));
       features = m.features || features;
       voice.leave(); // kết nối lại quán thì vào lại kênh thoại sau
-      renderVoice();
+      voiceMicSent = ''; // kết nối mới: server chưa biết mic mình
+      onVoiceLive(m.voiceLive || {}); // kênh nào đang có người nói thì tự vào nghe
       setMic(m.mic);
       if (net.rejoin) {
         // Nối lại sau khi rớt mạng / server deploy: đứng lại chỗ cũ, đang ngồi thì ngồi lại bàn cũ.
@@ -4182,6 +4184,9 @@ function onMessage(m) {
     case 'clock':
       onClock(m);
       break;
+    case 'voice-live':
+      onVoiceLive(m);
+      break;
     case 'restart':
       net.restarting = true; // server sắp tắt để lên bản mới: lát nữa tự nối lại
       toast('🔧 Quán đang nâng cấp, vài giây nữa vào lại…');
@@ -4322,22 +4327,64 @@ function closeModal() {
 
 // ================= Thoại (LiveKit) =================
 // Chọn kênh nghe (Đóng / Cả quán / Bàn) và bật mic ở Cài đặt → Thoại; phím V bật/tắt mic. Mỗi lúc chỉ ở một kênh.
+// Tiết kiệm phút LiveKit (tính cả người chỉ nghe): chỉ ở trong kênh khi kênh đó có người bật mic. Server báo kênh nào
+// đang có người nói (voice-live, không qua LiveKit); có người nói thì tự vào nghe, không ai nói vài giây thì tự rời.
 // Mic đang bật thì hiện viên đỏ cạnh khung chat để luôn biết mọi người đang nghe mình.
 let voiceSpeakers = new Set(), voicePeers = new Map();
 let voiceWantMic = false; // đang chờ vào kênh xong thì bật mic
+let voiceAutoOff = false; // thoại vừa tự ngắt (rời tab / im quá lâu), chờ người chơi quay lại mới vào lại
+let voiceIntent = settings.voiceSpk === 'off' ? 'off' : 'all'; // kênh người chơi muốn nghe
+let voiceLiveState = { all: 0, tables: {} }; // số người đang bật mic ở từng kênh (server báo)
+let voiceMicSent = ''; // trạng thái mic đã báo server, để chỉ báo khi đổi
+let voiceQuietSince = 0; // lúc kênh mình đang ở bắt đầu không còn ai bật mic
+const VOICE_QUIET_MS = 8000; // không ai bật mic chừng này thì rời kênh
 const VOICE_LABEL = { all: 'Cả quán', table: 'Bàn' };
+const voiceWanted = () => (voiceIntent === 'table' && !meA?.seat ? 'all' : voiceIntent);
+// Số người khác đang bật mic ở một kênh (trừ chính mình)
+function voiceOthers(scope) {
+  const mine = voice.mic && voice.scope === scope ? 1 : 0;
+  const n = scope === 'table' ? (meA?.seat ? voiceLiveState.tables[meA.seat.table] || 0 : 0) : voiceLiveState.all;
+  return Math.max(0, n - mine);
+}
+// Gọi khi server báo ai đang nói, khi đổi kênh / ngồi / đứng, và định kỳ: vào hoặc rời kênh cho đúng.
+function voiceAutoManage() {
+  if (!features.voice || !net.online || !state.started || voice.connecting) return;
+  const want = voiceWanted();
+  if (want !== 'off' && voiceOthers(want) > 0) {
+    voiceQuietSince = 0;
+    if (!voiceAutoOff && voice.scope !== want) joinVoice(want);
+    return;
+  }
+  // Mình đang ở trong kênh mà không còn ai (kể cả mình) bật mic: chờ một lúc rồi rời để khỏi tốn phút.
+  if (voice.scope && !voice.mic && voiceOthers(voice.scope) === 0) {
+    voiceQuietSince ||= Date.now();
+    if (Date.now() - voiceQuietSince > VOICE_QUIET_MS) {
+      voiceQuietSince = 0;
+      voice.leave();
+    }
+  } else voiceQuietSince = 0;
+}
+setInterval(voiceAutoManage, 2000);
+const voiceComeBack = () => {
+  if (!voiceAutoOff || document.hidden) return;
+  voiceAutoOff = false;
+  voiceAutoManage();
+};
+for (const evName of ['pointerdown', 'keydown']) addEventListener(evName, voiceComeBack, { passive: true });
+document.addEventListener('visibilitychange', voiceComeBack);
 const voice = createVoice({
   onState: renderVoice,
   onSpeakers: (set) => { voiceSpeakers = set; markSpeakers(); },
   onPeers: (map) => { voicePeers = map; updatePeople(); },
   onError: (msg) => toast(`🎧 ${msg}`),
-  onAutoLeave: (why) => {
-    const msg = why === 'idle' ? '🎧 Kênh thoại im lặng 3 phút nên đã tự ngắt. Vào ⚙️ Cài đặt → Thoại để nghe lại nhé'
-      : '🎧 Bạn rời tab hơn 1 phút nên thoại đã tự ngắt. Vào ⚙️ Cài đặt → Thoại để nghe lại nhé';
-    if (document.hidden) addEventListener('visibilitychange', () => toast(msg), { once: true });
-    else toast(msg);
-  },
+  // Rời tab quá 1 phút / kênh im quá lâu thì voice.js tự ngắt; quay lại tab, bấm hay gõ phím là được vào lại.
+  onAutoLeave: () => { voiceAutoOff = true; },
 });
+function onVoiceLive(m) {
+  voiceLiveState = { all: m.all || 0, tables: m.tables || {} };
+  voiceAutoManage();
+  renderVoice();
+}
 function renderVoice() {
   $('voice-settings').classList.toggle('hidden', !features.voice);
   // Vừa vào kênh xong mà đang chờ bật mic (bật mic lúc chưa vào kênh)
@@ -4345,15 +4392,22 @@ function renderVoice() {
     voiceWantMic = false;
     setVoiceMic(true);
   }
-  const cur = voice.scope || 'off', ch = VOICE_LABEL[voice.scope] || '';
+  // Báo server mình đang bật mic ở kênh nào (để máy người khác biết lúc nào cần vào nghe)
+  const micKey = voice.mic && voice.scope ? `${voice.scope}:${voice.table ?? ''}` : '';
+  if (micKey !== voiceMicSent && net.online) {
+    voiceMicSent = micKey;
+    send({ t: 'voice-mic', on: !!micKey, scope: voice.scope || 'all' });
+  }
+  const want = voiceWanted(), ch = VOICE_LABEL[voice.scope] || '';
   document.querySelectorAll('[data-vspk]').forEach((b) => {
-    b.classList.toggle('on', b.dataset.vspk === cur);
+    b.classList.toggle('on', b.dataset.vspk === want);
     if (b.dataset.vspk === 'table') b.disabled = !meA?.seat;
   });
   document.querySelectorAll('[data-vmic]').forEach((b) => b.classList.toggle('on', (b.dataset.vmic === 'on') === voice.mic));
   $('voice-status').textContent = voice.connecting ? '⏳ Đang vào kênh…'
-    : voice.scope ? `Đang nghe kênh ${ch}${voice.mic ? `, mic đang bật (${ch === 'Bàn' ? 'cả bàn' : 'cả quán'} nghe bạn nói)` : ''}. Kênh im lặng 3 phút hoặc rời tab hơn 1 phút thì tự ngắt.`
-    : 'Thoại đang đóng. Chọn kênh để nghe, bật mic (hoặc phím V) để nói.';
+    : voice.scope ? `Đang nghe kênh ${ch}${voice.mic ? `, mic đang bật (${ch === 'Bàn' ? 'cả bàn' : 'cả quán'} nghe bạn nói)` : ''}.`
+    : want === 'off' ? 'Thoại đang đóng. Chọn kênh để nghe, bật mic (hoặc phím V) để nói.'
+    : `🔊 Sẵn sàng nghe kênh ${VOICE_LABEL[want]}: có người bật mic là tự nghe. Bật mic (hoặc phím V) để nói.`;
   const live = $('voice-live');
   live.classList.toggle('hidden', !voice.mic || !state.started);
   live.textContent = `🎙️ ${ch}`;
@@ -4374,29 +4428,40 @@ async function setVoiceMic(want) {
   if (on) toast(voice.scope === 'table' ? '🎙️ Cả bàn đang nghe bạn nói' : '🎙️ Cả quán đang nghe bạn nói');
   renderVoice();
 }
-// Cài đặt → Thoại: chọn kênh nghe. Đổi kênh lúc mic đang bật thì sang kênh mới vẫn bật mic.
+// Cài đặt → Thoại: chọn kênh muốn nghe. Chỉ vào kênh khi có người nói (xem voiceAutoManage);
+// đang ở kênh khác thì chuyển ngay. Nhớ lựa chọn: chọn Đóng thì lần sau vào quán cũng đóng.
 document.querySelectorAll('[data-vspk]').forEach((b) => (b.onclick = () => {
   const next = b.dataset.vspk;
-  if (voice.connecting || next === (voice.scope || 'off')) return;
-  voiceWantMic = next !== 'off' && voice.mic;
-  joinVoice(next);
+  voiceIntent = next;
+  settings.voiceSpk = next === 'off' ? 'off' : 'all';
+  saveSettings();
+  voiceAutoOff = false;
+  if (!voice.connecting && voice.scope && voice.scope !== next) {
+    voiceWantMic = next !== 'off' && voice.mic; // đổi kênh lúc mic đang bật thì sang kênh mới vẫn bật mic
+    joinVoice(next);
+  }
+  voiceAutoManage();
+  renderVoice();
 }));
-// Bật mic: chưa vào kênh nào thì tự vào (đang ngồi: Bàn, không thì Cả quán) rồi bật.
+// Bật mic: chưa vào kênh nào thì vào kênh đang chọn (Đóng thì: đang ngồi vào Bàn, không thì Cả quán) rồi bật.
 function voiceMicOn() {
   if (!features.voice || voice.connecting) return;
+  voiceAutoOff = false;
   if (voice.scope) return setVoiceMic(true);
   voiceWantMic = true;
-  joinVoice(meA?.seat ? 'table' : 'all');
+  const want = voiceWanted();
+  joinVoice(want !== 'off' ? want : meA?.seat ? 'table' : 'all');
 }
 const toggleVoiceMic = () => (voice.mic ? setVoiceMic(false) : voiceMicOn());
 document.querySelectorAll('[data-vmic]').forEach((b) => (b.onclick = () => (b.dataset.vmic === 'on' ? voiceMicOn() : setVoiceMic(false))));
 $('voice-live').onclick = (e) => { e.currentTarget.blur(); setVoiceMic(false); };
-// Rời bàn / đổi bàn thì ra khỏi kênh thoại của bàn cũ.
+// Rời bàn / đổi bàn thì ra khỏi kênh thoại của bàn cũ; lúc đó muốn nghe Bàn thì chuyển sang Cả quán.
 function voiceSeatChanged() {
   if (voice.scope === 'table' && voice.table !== meA?.seat?.table) {
-    voice.leave();
+    voice.leave().then(voiceAutoManage);
     toast('🎧 Đã rời kênh thoại của bàn');
   }
+  voiceAutoManage();
   renderVoice();
 }
 

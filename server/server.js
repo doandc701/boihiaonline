@@ -304,7 +304,7 @@ function join(room, ws, m) {
   send(ws, {
     t: 'welcome', id: p.id, now: Date.now(), room: room.id,
     players: [...room.players.values()].filter((o) => o !== p).map(pub),
-    dishes: room.dishes, mic: micState(room), features: { ytSearch: !!YOUTUBE_API_KEY, voice: voiceEnabled },
+    dishes: room.dishes, mic: micState(room), features: { ytSearch: !!YOUTUBE_API_KEY, voice: voiceEnabled }, voiceLive: voiceLive(room),
     rooms: [...room.privateRooms.keys()].map((table) => roomMsg(room, table)),
     tabs: room.tabs.map((_, table) => tabMsg(room, table)),
     chatAll: room.chatAll,
@@ -316,12 +316,32 @@ function join(room, ws, m) {
   return p;
 }
 
+// Kênh thoại nào đang có người bật mic: { all: số người, tables: { id bàn: số người } }.
+function voiceLive(room) {
+  const tables = {};
+  let all = 0;
+  for (const o of room.players.values()) {
+    if (!o.voiceMic) continue;
+    if (o.voiceMic.scope === 'all') all++;
+    else tables[o.voiceMic.table] = (tables[o.voiceMic.table] || 0) + 1;
+  }
+  return { all, tables };
+}
+function setVoiceMic(room, p, mic) {
+  const before = JSON.stringify(p.voiceMic || null);
+  p.voiceMic = mic;
+  if (JSON.stringify(mic || null) !== before) broadcast(room, { t: 'voice-live', ...voiceLive(room) });
+}
+
 function leave(room, p) {
+  const hadVoiceMic = !!p.voiceMic;
+  p.voiceMic = null;
   stand(room, p);
   room.players.delete(p.id);
   room.dirty.delete(p.id);
   removeFromMic(room, p.id);
   broadcast(room, { t: 'leave', id: p.id });
+  if (hadVoiceMic) broadcast(room, { t: 'voice-live', ...voiceLive(room) });
 }
 
 function sit(room, p, m) {
@@ -364,6 +384,7 @@ function stand(room, p) {
   const { table, idx } = p.seat;
   room.seats.delete(`${table}:${idx}`);
   p.seat = null;
+  if (p.voiceMic?.scope === 'table') setVoiceMic(room, p, null); // rời bàn thì không còn nói ở kênh bàn
   broadcast(room, { t: 'stand', id: p.id });
   // Chủ phòng đứng dậy thì nhường cho người còn ngồi, hết người thì phòng trống và mở khoá.
   const priv = room.privateRooms.get(table);
@@ -717,6 +738,14 @@ function handle(room, p, m) {
       if (!o || o.inviteTo?.id !== p.id || Date.now() - o.inviteTo.at > 15000) return;
       o.inviteTo = null;
       send(o.ws, { t: 'invite-reply', id: p.id, ok: !!m.ok });
+      break;
+    }
+    case 'voice-mic': {
+      // Máy khách báo đang bật/tắt mic (không qua LiveKit nên không tốn phút). Server báo cả quán biết kênh nào đang
+      // có người nói để máy khác chỉ vào kênh nghe lúc đó; không ai nói thì không ai ở trong kênh, không tốn phút.
+      if (!voiceEnabled) return;
+      const scope = m.scope === 'table' ? 'table' : 'all';
+      setVoiceMic(room, p, !m.on || (scope === 'table' && !p.seat) ? null : { scope, table: scope === 'table' ? p.seat.table : null });
       break;
     }
     case 'voice-token': {
