@@ -577,6 +577,12 @@ html .rooms button.on { --b1: #4fe06b; --b2: #2fbf4f; --be: #1d8f37; background:
 html .rooms button small { color: #ffffffcc; }
 /* Nút to (Vào quán…): nút chính xanh lá, khối dày hơn */
 html button.big { --b1: #4fe06b; --b2: #2fbf4f; --be: #1d8f37; box-shadow: inset 0 3px 0 #ffffff6b, inset 0 -5px 0 var(--be), 0 4px 0 var(--gb-ink); border-radius: 16px; }
+/* Màn hình đầu: nút gọn cho cân đối. Ba cơ sở chung một hàng, Vào quán là nút nổi nhất, Bao chủ quán là nút phụ nhỏ */
+html .rooms { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; width: 100%; max-width: 330px; }
+html .rooms button { padding: 6px 4px; font-size: .85rem; border-radius: 12px; line-height: 1.2; box-shadow: inset 0 2px 0 #ffffff6b, inset 0 -3px 0 var(--be), 0 2px 0 var(--gb-ink); }
+html .rooms button small { font-size: .62rem; }
+html button.big { font-size: 1.02rem; padding: 9px 26px; border-radius: 14px; box-shadow: inset 0 2px 0 #ffffff6b, inset 0 -4px 0 var(--be), 0 3px 0 var(--gb-ink); }
+html .donate-btn { font-size: .82rem; padding: 6px 14px; border-radius: 12px; box-shadow: inset 0 2px 0 #ffffff6b, inset 0 -3px 0 var(--be), 0 2px 0 var(--gb-ink); }
 /* Hình dáng */
 .icon { border-radius: 50%; }
 .chip { border-radius: 99px; box-shadow: inset 0 2px 0 #ffffff40, inset 0 -3px 0 var(--be), 0 2px 0 var(--gb-ink); }

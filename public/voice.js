@@ -4,6 +4,11 @@ const LK_URL = 'https://cdn.jsdelivr.net/npm/livekit-client@2.20.2/dist/livekit-
 let lkPromise = null;
 const loadLK = () => (lkPromise ??= import(LK_URL));
 
+// iPhone (Safari 16.4+): game đặt phiên âm thanh 'playback' để nút gạt im lặng không tắt nhạc, nhưng kiểu này không cho
+// thu micro ("AudioSession category is not compatible with audio capture"). Bật mic thì trả về 'auto' để Safari tự chọn
+// kiểu vừa phát vừa thu như các trang gọi điện; tắt mic hoặc rời kênh thì về lại 'playback'.
+const setAudioSession = (type) => { try { if (navigator.audioSession) navigator.audioSession.type = type; } catch {} };
+
 // Tự ngắt để tiết kiệm phút miễn phí của LiveKit (tính theo thời gian ở trong kênh, kể cả chỉ nghe):
 // chuyển tab / khoá máy quá HIDDEN_MS, hoặc cả kênh không ai nói quá IDLE_MS.
 const HIDDEN_MS = 60 * 1000;
@@ -108,18 +113,26 @@ export function createVoice(hooks) {
     v.room = null;
     try { await room?.disconnect(); } catch {}
     cleanup();
+    setAudioSession('playback');
   }
 
   // Bật/tắt mic của mình (trình duyệt hỏi quyền micro lần đầu).
   async function setMic(on) {
     if (!v.room || v.connecting) return false;
+    if (on) setAudioSession('auto');
     try {
       await v.room.localParticipant.setMicrophoneEnabled(on);
       v.mic = on;
       v.lastTalk = Date.now();
+      if (!on) setAudioSession('playback');
     } catch (e) {
       v.mic = false;
-      hooks.onError?.(e?.name === 'NotAllowedError' ? 'Trình duyệt chưa cho dùng micro. Bấm vào biểu tượng ổ khoá trên thanh địa chỉ để cho phép nhé.' : `Không bật được micro (${e?.message || e})`);
+      setAudioSession('playback');
+      const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.platform));
+      hooks.onError?.(e?.name === 'NotAllowedError'
+        ? (ios ? 'Safari chưa cho dùng micro. Bấm "aA" trên thanh địa chỉ → Cài đặt trang web → Micrô → Cho phép, rồi bật lại nhé.'
+          : 'Trình duyệt chưa cho dùng micro. Bấm vào biểu tượng ổ khoá trên thanh địa chỉ để cho phép nhé.')
+        : `Không bật được micro (${e?.message || e})`);
     }
     emit();
     return v.mic;
