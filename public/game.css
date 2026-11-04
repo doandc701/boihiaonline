@@ -283,6 +283,44 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
 }
 #toast.show { transform: translateX(-50%) translateY(0); }
 
+/* Ví, câu cá, giỏ đồ */
+.wallet-chip.broke { background: #c62828; color: #fff; animation: tvPulse 1.2s ease-in-out infinite; }
+.fish-btn b { animation: none; }
+.fish-panel { max-width: 420px; }
+/* Hộp câu cá gọn, nằm dưới màn hình, không che tối cảnh để nhìn rõ nhân vật đang câu */
+#hud.fishing .action-bar, #hud.fishing .chat, #hud.fishing #prompt { display: none; }
+.overlay.fish-dock { background: transparent; align-items: flex-end; pointer-events: none; padding-bottom: max(14px, env(safe-area-inset-bottom)); }
+.fish-dock .fish-panel { pointer-events: auto; max-width: 380px; padding: 10px 14px; border-radius: 14px; background: color-mix(in srgb, var(--panel) 88%, transparent); }
+.fish-dock .fish-name { margin: 0 0 2px; font-weight: 800; font-size: 1.05rem; }
+.fish-dock .fish-bar { height: 20px; margin: 6px 0; }
+.fish-dock .fish-result { min-height: 2.5em; margin: 4px 0; font-size: .85rem; font-weight: 500; color: var(--muted); }
+.fish-dock .row-btns button { flex: 1; }
+.fish-dock .row-btns { margin-top: 6px; gap: 8px; }
+.fish-dock .row-btns button { padding: 7px 14px; font-size: .9rem; }
+.fish-dock .row-btns .big { font-size: 1rem; padding: 8px 18px; }
+
+.fish-bar { position: relative; height: 28px; border-radius: 14px; background: var(--field); overflow: hidden; margin: 12px 0; border: 1px solid var(--border); }
+.fish-zone { position: absolute; top: 0; bottom: 0; background: #43a047aa; border-left: 2px solid #2e7d32; border-right: 2px solid #2e7d32; }
+.fish-mark { position: absolute; top: -2px; bottom: -2px; width: 6px; margin-left: -3px; background: var(--accent); border-radius: 3px; box-shadow: 0 0 8px var(--accent); }
+.fish-bar.idle .fish-mark { opacity: .3; }
+.fish-result { min-height: 1.4em; font-weight: 700; }
+/* Đoạn phim kéo cá: ẩn hộp câu và HUD cho thấy cảnh, hiện dòng chữ lớn */
+.overlay.cine, #hud.cine { visibility: hidden; }
+.catch-banner { position: fixed; left: 50%; top: 18%; transform: translateX(-50%); z-index: 7; pointer-events: none; text-align: center;
+  font-size: clamp(1.6rem, 5vw, 2.6rem); font-weight: 800; color: #fff; text-shadow: 0 3px 0 #0006, 0 0 18px #0009; animation: catchPop .45s cubic-bezier(.2, 1.6, .4, 1); }
+.catch-banner small { display: block; font-size: .55em; color: #ffe082; margin-top: 4px; }
+.catch-banner.rare { color: #ffd54f; font-size: clamp(1.9rem, 6vw, 3.1rem); }
+.catch-banner.rare span { color: #fff; }
+@keyframes catchPop { from { transform: translateX(-50%) scale(.3); opacity: 0; } to { transform: translateX(-50%) scale(1); opacity: 1; } }
+.bag-panel { max-width: 460px; }
+.bag-list { display: grid; gap: 6px; max-height: 45vh; overflow: auto; text-align: left; margin: 10px 0; }
+.bag-row { display: flex; align-items: center; gap: 10px; background: var(--field); border-radius: 10px; padding: 8px 10px; }
+.bag-row .ico { font-size: 1.6rem; }
+.bag-row .info { flex: 1; min-width: 0; }
+.bag-row .info small { display: block; color: var(--muted); }
+.bag-row button { padding: 5px 10px; font-size: .8rem; }
+#bottle-reply { width: 100%; box-sizing: border-box; background: var(--field); color: var(--text); border: 1px solid var(--muted); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 16px; resize: none; }
+
 /* Lời mời ly */
 .invite {
   position: fixed; left: 50%; top: calc(120px + env(safe-area-inset-top)); transform: translateX(-50%); z-index: 6;

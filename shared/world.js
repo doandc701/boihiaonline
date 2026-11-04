@@ -131,6 +131,41 @@ export const MENU = [
   { icon: '🥣', name: 'Cháo ngao', price: 50000, cat: 'Cơm & rau' },
 ];
 
+// ---------- Ví tiền & kiếm tiền ----------
+export const START_MONEY = 1000000; // mỗi người mới vào được 1 triệu (tiền ảo)
+export const ROUND_PRICE = 500000; // bao cả quán một két
+export const VENDOR_PRICE = 15000; // gói lạc của cô bán rong
+// Đồ có thể có trong giỏ: cá câu được và đồ nhặt trên bãi. price: bán được bao nhiêu.
+// w: độ hay gặp. rare: cá hiếm (giá cao, câu được thì cả quán được báo).
+export const FISH = [
+  { k: 'dep', icon: '🩴', name: 'Chiếc dép tổ ong', price: 0, w: 6, junk: true, desc: 'Ai vứt dép xuống biển vậy trời! Không bán được, vứt đi cho sạch biển.' },
+  { k: 'ca-com', icon: '🐟', name: 'Cá cơm', price: 15000, w: 34, desc: 'Nhỏ xíu nhưng chiên giòn nhắm bia là hết sảy.' },
+  { k: 'ca-nuc', icon: '🐟', name: 'Cá nục', price: 30000, w: 26, desc: 'Kho cà hay nướng lá chuối đều đưa cay.' },
+  { k: 'muc', icon: '🦑', name: 'Mực ống', price: 60000, w: 15, desc: 'Tươi rói, nướng sa tế là cả bàn tranh nhau.' },
+  { k: 'ca-thu', icon: '🐠', name: 'Cá thu', price: 100000, w: 10, desc: 'Thịt chắc, béo, dân biển quý lắm.' },
+  { k: 'ca-mu', icon: '🐡', name: 'Cá mú', price: 300000, w: 6, rare: true, desc: 'Cá hiếm! Bà Tư trả giá cao lắm.' },
+  { k: 'tom-hum', icon: '🦞', name: 'Tôm hùm', price: 500000, w: 3, rare: true, desc: 'Cực hiếm! Mang ra Bà Tư bán được cả nửa triệu.' },
+];
+export const BEACH = [
+  { k: 'cua', icon: '🦀', name: 'Cua biển', price: 40000, w: 3 },
+  { k: 'oc', icon: '🐌', name: 'Ốc gạo', price: 20000, w: 4 },
+  { k: 'so', icon: '🐚', name: 'Vỏ sò đẹp', price: 10000, w: 4 },
+  { k: 'chai', icon: '🍾', name: 'Chai trôi dạt', price: 5000, w: 2, bottle: true },
+];
+export const ITEMS = Object.fromEntries([...FISH, ...BEACH].map((it) => [it.k, it]));
+export const BAG_MAX = 30;
+// Bãi cát nơi đồ trôi dạt xuất hiện, và mép nước nơi câu cá được.
+export const BEACH_AREA = { minX: -45, maxX: 45, minZ: SHORE.wallZ + 3, maxZ: SHORE.seaZ - 2 };
+export const FISH_ZONE_Z = SHORE.seaZ - 2.5;
+// Sạp thu mua của Bà Tư dưới chân bậc xuống biển: phải đến đây mới bán được đồ trong giỏ.
+export const TRADER = { x: 5.8, z: 16.4, range: 3.2 };
+export const nearTrader = (p) => p.f === 0 && Math.hypot(p.x - TRADER.x, p.z - TRADER.z) <= TRADER.range;
+export const pickWeighted = (list, rnd = Math.random) => {
+  let r = rnd() * list.reduce((s, x) => s + x.w, 0);
+  for (const x of list) if ((r -= x.w) < 0) return x;
+  return list[list.length - 1];
+};
+
 // Hành động người chơi được phát cho cả quán.
 export const ACTS = ['cheers', 'pour', 'wave', 'clap', 'water', 'offer', 'dance', 'dance-stop'];
 

@@ -3,3 +3,6 @@ dist/
 .vercel/
 .env
 .env.*
+data/
+# File nhạc gốc tải về (quá lớn để đưa lên git), game chỉ dùng bản đã cắt một vòng
+public/music/YTSave*

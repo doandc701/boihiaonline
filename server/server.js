@@ -7,6 +7,7 @@ import { WebSocketServer } from 'ws';
 import {
   ROOMS, CAPACITY, TABLES, MENU, ACTS, SHIRTS, HAIRS, FLOOR_BOUNDS, STAGE,
   SONG_MS, MAX_SONG_MS, MIC_DELAY_MS, ROUND_COOLDOWN_MS, MAX_DISHES, CHAT_MAX, seatPos, nearestFreeSeat, tabTotal,
+  START_MONEY, ROUND_PRICE, VENDOR_PRICE, FISH, BEACH, ITEMS, BAG_MAX, BEACH_AREA, FISH_ZONE_Z, pickWeighted, drinkOfTable, nearTrader,
 } from '../shared/world.js';
 import { SONGS, parseYouTube, YT_ID } from '../shared/songs.js';
 
@@ -88,12 +89,113 @@ const rooms = new Map(ROOMS.filter((r) => !ACTIVE_ROOMS.length || ACTIVE_ROOMS.i
   micTimer: null,
   dirty: new Set(),
   privateRooms: new Map(), // id bàn phòng riêng -> { owner, locked }
+  holds: new Map(), // bàn trống còn nợ, đang giữ chỗ: id bàn -> { until, timer }
+  beach: new Map(), // đồ trôi dạt trên bãi: id -> { id, k, x, z }
+  notes: [], // lời nhắn người chơi thả vào chai: { text, from }
   chatAll: [], // tin nhắn gần nhất của kênh cả quán, gửi cho người mới vào
 }]));
 const CHAT_ALL_KEEP = 30;
+for (const room of rooms.values()) scheduleBeach(room);
 let nextId = 1;
-function newTab() { return { items: [], pours: 0, paidBy: null, paidName: null }; }
-const tabMsg = (room, table) => ({ t: 'tab', table, ...room.tabs[table], total: tabTotal(TABLES[table], room.tabs[table]) });
+
+// ---------- Ví tiền (tiền ảo) ----------
+// Mỗi trình duyệt có một mã pid riêng (lưu trong localStorage), ví gắn với pid nên vào lại vẫn còn tiền.
+// Ghi ra data/wallets.json để server khởi động lại không mất (host không có ổ đĩa lâu dài thì mất khi deploy lại).
+const WALLET_FILE = process.env.WALLET_FILE || path.join(ROOT, 'data', 'wallets.json');
+const wallets = new Map(); // pid -> { money, bag: [kind], seen }
+try {
+  for (const [pid, w] of Object.entries(JSON.parse(fs.readFileSync(WALLET_FILE, 'utf8')))) wallets.set(pid, w);
+} catch {}
+let walletsDirty = false;
+function saveWallets() {
+  if (!walletsDirty) return;
+  walletsDirty = false;
+  const cutoff = Date.now() - 60 * 24 * 3600 * 1000; // bỏ ví không ai vào 60 ngày
+  for (const [pid, w] of wallets) if (w.seen < cutoff) wallets.delete(pid);
+  try {
+    fs.mkdirSync(path.dirname(WALLET_FILE), { recursive: true });
+    fs.writeFileSync(WALLET_FILE + '.tmp', JSON.stringify(Object.fromEntries(wallets)));
+    fs.renameSync(WALLET_FILE + '.tmp', WALLET_FILE);
+  } catch (e) { console.error('saveWallets', e.message); }
+}
+setInterval(saveWallets, 30000).unref();
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { saveWallets(); process.exit(0); });
+function walletOf(pid) {
+  if (!wallets.has(pid)) wallets.set(pid, { money: START_MONEY, bag: [], seen: Date.now() });
+  const w = wallets.get(pid);
+  w.seen = Date.now();
+  walletsDirty = true;
+  return w;
+}
+const walletMsg = (p) => ({ t: 'wallet', money: p.wallet.money, bag: p.wallet.bag, debt: p.wallet.debt || 0 });
+const fmtMoney = (n) => n.toLocaleString('vi-VN') + 'đ';
+// Tiền bàn đang nợ (hoá đơn chưa ai trả).
+const owedBy = (room, p) => {
+  if (!p.seat) return 0;
+  const tab = room.tabs[p.seat.table];
+  return tab.paidBy ? 0 : tabTotal(TABLES[p.seat.table], tab);
+};
+// Gọi thêm chỉ khi ví đủ trả cả hoá đơn bàn đang nợ cộng món mới, để bàn luôn có người trả được.
+function canAfford(room, p, extra) {
+  if (p.wallet.debt > 0) {
+    send(p.ws, { t: 'broke', msg: `📒 Bạn còn nợ quán ${fmtMoney(p.wallet.debt)} từ lần trước. Ra quầy thu ngân trả nợ rồi gọi tiếp nhé!` });
+    return false;
+  }
+  const need = owedBy(room, p) + extra;
+  if (p.wallet.money >= need) return true;
+  send(p.ws, { t: 'broke', msg: `💸 Ví còn ${fmtMoney(p.wallet.money)}, chưa đủ ${fmtMoney(need)} (gồm cả hoá đơn bàn). Ra biển câu cá, nhặt ốc kiếm thêm nhé!` });
+  return false;
+}
+function spend(p, amount) {
+  p.wallet.money -= amount;
+  walletsDirty = true;
+  send(p.ws, walletMsg(p));
+}
+
+// ---------- Đồ trôi dạt trên bãi biển ----------
+const BEACH_MAX = 10;
+let nextBeachId = 1;
+const beachMsg = (room) => ({ t: 'beach', items: [...room.beach.values()] });
+function spawnBeach(room) {
+  if (!room.players.size || room.beach.size >= BEACH_MAX) return;
+  const n = 1 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < n && room.beach.size < BEACH_MAX; i++) {
+    const it = pickWeighted(BEACH), id = nextBeachId++;
+    const x = BEACH_AREA.minX + Math.random() * (BEACH_AREA.maxX - BEACH_AREA.minX);
+    const z = BEACH_AREA.minZ + Math.random() * (BEACH_AREA.maxZ - BEACH_AREA.minZ);
+    room.beach.set(id, { id, k: it.k, x: +x.toFixed(2), z: +z.toFixed(2) });
+  }
+  broadcast(room, beachMsg(room));
+}
+function scheduleBeach(room) {
+  setTimeout(() => { spawnBeach(room); scheduleBeach(room); }, 60000 + Math.random() * 90000).unref();
+}
+
+// Lời nhắn trong chai: thơ nhậu, câu thả thính, và lời người chơi thả lại biển.
+const BOTTLE_NOTES = [
+  'Rượu ngon không có bạn hiền, không mua không phải không tiền không mua.',
+  'Uống đi em, rượu chẳng say đâu, say là vì nụ cười em đó.',
+  'Anh không say rượu, anh say em.',
+  'Đời người được mấy lần say, say tình thì khổ, say này thì vui.',
+  'Ai đọc được lời này: tối nay nhớ về nhà an toàn nhé!',
+  'Nắng có mũ, mưa có ô, còn em có anh lo.',
+  'Một ly cho người ở lại, một ly cho người đã xa.',
+  'Bia lạnh, mồi ngon, anh em đủ: thế là đời đẹp.',
+  'Cậu có biết biển rộng bao nhiêu không? Không bằng nỗi nhớ tớ dành cho cậu.',
+  'Hôm nay dzô hết mình, mai đi làm hết sức.',
+];
+// owed: pid -> số tiền người đó gọi (món + ly bia của mình), dùng khi phải tự thu; members: pid từng ngồi bàn này.
+// pid là chìa khoá ví nên không bao giờ gửi cho người khác (tabMsg chỉ gửi phần hiển thị).
+function newTab() { return { items: [], pours: 0, paidBy: null, paidName: null, owed: {}, members: [] }; }
+const tabMsg = (room, table) => {
+  const { items, pours, paidBy, paidName } = room.tabs[table];
+  return { t: 'tab', table, items, pours, paidBy, paidName, total: tabTotal(TABLES[table], room.tabs[table]) };
+};
+// Ghi phần của người gọi vào hoá đơn bàn.
+function charge(room, p, table, amount) {
+  const tab = openTab(room, table);
+  tab.owed[p.pid] = (tab.owed[p.pid] || 0) + amount;
+}
 // Gọi thêm / rót thêm sau khi bàn đã trả tiền thì mở hoá đơn mới.
 function openTab(room, table) {
   if (room.tabs[table].paidBy) room.tabs[table] = newTab();
@@ -150,11 +252,13 @@ function join(room, ws, m) {
     leave(room, same);
     same.ws.terminate();
   }
+  const pid = typeof m.pid === 'string' && /^[\w-]{8,64}$/.test(m.pid) ? m.pid : `anon-${nextId}-${Math.random().toString(36).slice(2)}`;
   const p = {
-    id: String(nextId++), ws, key, name, look: cleanLook(m.look),
+    id: String(nextId++), ws, key, name, look: cleanLook(m.look), pid, wallet: walletOf(pid), canWrite: 0,
     x: Math.random() * 2 - 1, z: 2.6, f: 0, yaw: Math.PI, d: 0, seat: null, lastRound: 0, chatTokens: 3, chatLast: Date.now(), allTokens: 2, allLast: Date.now(), cd: {},
   };
   room.players.set(p.id, p);
+  if (!room.beach.size) spawnBeach(room); // bãi trống thì rải ít đồ cho người mới có cái nhặt
   send(ws, {
     t: 'welcome', id: p.id, now: Date.now(), room: room.id,
     players: [...room.players.values()].filter((o) => o !== p).map(pub),
@@ -162,6 +266,9 @@ function join(room, ws, m) {
     rooms: [...room.privateRooms.keys()].map((table) => roomMsg(room, table)),
     tabs: room.tabs.map((_, table) => tabMsg(room, table)),
     chatAll: room.chatAll,
+    wallet: { money: p.wallet.money, bag: p.wallet.bag, debt: p.wallet.debt || 0 },
+    holds: [...room.holds].map(([table, h]) => ({ table, until: h.until })),
+    beach: [...room.beach.values()],
   });
   for (const o of room.players.values()) if (o !== p) send(o.ws, { t: 'join', player: pub(p) });
   return p;
@@ -180,10 +287,19 @@ function sit(room, p, m) {
   if (!T || p.seat || room.mic.singer === p.id) return;
   const priv = room.privateRooms.get(T.id);
   if (priv?.locked && priv.owner !== p.id) { send(p.ws, { t: 'sit-fail', table: T.id, locked: true }); return; }
+  const hold = room.holds.get(T.id);
+  if (hold && !room.tabs[T.id].members.includes(p.pid)) { send(p.ws, { t: 'sit-fail', table: T.id, held: true }); return; }
   const idx = nearestFreeSeat(T, (i) => room.seats.has(`${T.id}:${i}`), p.x, p.z);
   if (idx < 0) { send(p.ws, { t: 'sit-fail', table: T.id }); return; }
+  if (hold) { // người trong nhóm quay lại: thôi giữ chỗ, nhậu tiếp hoá đơn cũ
+    clearTimeout(hold.timer);
+    room.holds.delete(T.id);
+    broadcast(room, { t: 'hold', table: T.id, until: 0 });
+  }
+  if (!room.tabs[T.id].members.includes(p.pid)) room.tabs[T.id].members.push(p.pid);
   room.seats.set(`${T.id}:${idx}`, p.id);
   p.seat = { table: T.id, idx };
+  p.cupFull = false; // mới ngồi xuống thì ly rỗng
   Object.assign(p, seatPos(T, idx), { f: T.floor });
   broadcast(room, { t: 'seat', id: p.id, table: T.id, idx });
   send(p.ws, tabMsg(room, T.id)); // các bàn khác không nhận cập nhật hoá đơn, nên gửi bản mới nhất khi ngồi
@@ -215,15 +331,54 @@ function stand(room, p) {
     else room.privateRooms.delete(table);
     broadcast(room, roomMsg(room, table));
   }
-  // Bàn trống thì dọn mồi và xoá hoá đơn.
+  // Bàn trống: còn nợ thì giữ chỗ HOLD_MS (đi WC, lên hát rồi về), hết giờ chưa ai trả thì tự thu; không nợ thì dọn luôn.
   if (![...room.seats.keys()].some((k) => k.startsWith(table + ':'))) {
-    if (room.dishes[table].length) {
-      room.dishes[table] = [];
-      broadcast(room, { t: 'dishes', table, items: [] });
-    }
-    // Không còn ai ngồi để báo; người ngồi sau nhận hoá đơn mới khi ngồi.
-    room.tabs[table] = newTab();
+    const tab = room.tabs[table];
+    if (!tab.paidBy && tabTotal(TABLES[table], tab) > 0) holdTable(room, table);
+    else clearTable(room, table);
   }
+}
+
+// ---------- Giữ chỗ, tự thu tiền, sổ nợ ----------
+const HOLD_MS = Number(process.env.HOLD_MS) || 3 * 60 * 1000;
+function clearTable(room, table) {
+  const hold = room.holds.get(table);
+  if (hold) {
+    clearTimeout(hold.timer);
+    room.holds.delete(table);
+    broadcast(room, { t: 'hold', table, until: 0 });
+  }
+  if (room.dishes[table].length) {
+    room.dishes[table] = [];
+    broadcast(room, { t: 'dishes', table, items: [] });
+  }
+  // Không còn ai ngồi để báo; người ngồi sau nhận hoá đơn mới khi ngồi.
+  room.tabs[table] = newTab();
+}
+function holdTable(room, table) {
+  const until = Date.now() + HOLD_MS;
+  room.holds.set(table, { until, timer: setTimeout(() => settleTable(room, table), HOLD_MS) });
+  broadcast(room, { t: 'hold', table, until });
+}
+// Hết giờ giữ chỗ mà chưa ai trả: ai gọi người nấy trả phần của mình, ví không đủ thì ghi sổ nợ.
+function settleTable(room, table) {
+  const tab = room.tabs[table];
+  if (!tab.paidBy) {
+    for (const [pid, amount] of Object.entries(tab.owed)) {
+      const w = walletOf(pid), paid = Math.min(w.money, amount);
+      w.money -= paid;
+      w.debt = (w.debt || 0) + amount - paid;
+      for (const o of room.players.values()) {
+        if (o.pid !== pid) continue;
+        send(o.ws, walletMsg(o));
+        send(o.ws, { t: 'notice', msg: amount > paid
+          ? `📒 Bàn bỏ về chưa trả: quán thu ${fmtMoney(paid)}, ghi sổ nợ ${fmtMoney(amount - paid)}`
+          : `💸 Bàn bỏ về chưa trả: quán tự thu ${fmtMoney(paid)} phần bạn gọi` });
+      }
+    }
+    walletsDirty = true;
+  }
+  clearTable(room, table);
 }
 
 // ---------- Mic karaoke: xếp hàng, mỗi lượt một bài ----------
@@ -297,10 +452,15 @@ function handle(room, p, m) {
     case 'stand': if (cooldown(p, 'seat', 500)) stand(room, p); break;
     case 'act': {
       if (!ACTS.includes(m.k) || !cooldown(p, 'act', 400)) return;
+      if (m.k === 'pour' && p.seat && !canAfford(room, p, drinkOfTable(TABLES[p.seat.table]).price)) return;
       const to = typeof m.to === 'string' && room.players.has(m.to) ? m.to : undefined;
       broadcast(room, { t: 'act', id: p.id, k: m.k, to });
+      // Một người dzô là cả bàn cùng uống cạn.
+      if (m.k === 'cheers' && p.seat) for (const o of room.players.values()) if (o.seat?.table === p.seat.table) o.cupFull = false;
       if (m.k === 'pour' && p.seat) {
+        p.cupFull = true;
         openTab(room, p.seat.table).pours++;
+        charge(room, p, p.seat.table, drinkOfTable(TABLES[p.seat.table]).price);
         toTable(room, p.seat.table, tabMsg(room, p.seat.table));
       }
       break;
@@ -308,18 +468,43 @@ function handle(room, p, m) {
     case 'refill': {
       // Ly rỗng mà cả bàn dzô thì tự rót: tính vào hoá đơn như một lượt rót, không diễn động tác rót.
       if (!p.seat || !cooldown(p, 'refill', 1000)) return;
+      if (!canAfford(room, p, drinkOfTable(TABLES[p.seat.table]).price)) return;
+      p.cupFull = true;
       openTab(room, p.seat.table).pours++;
+      charge(room, p, p.seat.table, drinkOfTable(TABLES[p.seat.table]).price);
       toTable(room, p.seat.table, tabMsg(room, p.seat.table));
+      break;
+    }
+    case 'pour-round': {
+      // Gọi em rót bia: em rót lần lượt cho mọi người cùng bàn đang có ly rỗng, mỗi ly tính một lượt rót.
+      if (!p.seat || !cooldown(p, 'pour-round', 2000)) return;
+      const table = p.seat.table;
+      // Người đang nợ quán thì chưa được rót (cũng như chưa được gọi món).
+      const ids = [...room.players.values()].filter((o) => o.seat?.table === table && !o.cupFull && !(o.wallet.debt > 0))
+        .sort((a, b) => a.seat.idx - b.seat.idx).map((o) => o.id);
+      if (!ids.length) { send(p.ws, { t: 'notice', msg: 'Ly ai cũng đầy rồi, dzô đi! 🍻' }); return; }
+      if (!canAfford(room, p, drinkOfTable(TABLES[table]).price * ids.length)) return;
+      const price = drinkOfTable(TABLES[table]).price;
+      for (const id of ids) {
+        const o = room.players.get(id);
+        o.cupFull = true;
+        charge(room, o, table, price); // ai uống ly nào ghi phần người đó
+      }
+      openTab(room, table).pours += ids.length;
+      broadcast(room, { t: 'pour-round', table, by: p.id, ids });
+      toTable(room, table, tabMsg(room, table));
       break;
     }
     case 'order': {
       if (!Number.isInteger(m.item) || !MENU[m.item] || !p.seat || !cooldown(p, 'order', 500)) return;
+      if (!canAfford(room, p, MENU[m.item].price)) return;
       const list = room.dishes[p.seat.table];
       list.push(m.item);
       if (list.length > MAX_DISHES) list.shift();
       broadcast(room, { t: 'dish', table: p.seat.table, item: m.item, by: p.id });
       const tab = openTab(room, p.seat.table);
       if (tab.items.length < 200) tab.items.push(m.item);
+      charge(room, p, p.seat.table, MENU[m.item].price);
       toTable(room, p.seat.table, tabMsg(room, p.seat.table));
       break;
     }
@@ -329,10 +514,28 @@ function handle(room, p, m) {
       const table = p.seat.table, tab = room.tabs[table];
       if (tab.paidBy) { send(p.ws, { t: 'notice', msg: `Bàn này ${tab.paidName} đã thanh toán rồi 💸` }); return; }
       if (!tab.items.length) { send(p.ws, { t: 'notice', msg: 'Bàn chưa gọi món nào, gọi món trước rồi mới tính tiền nhé!' }); return; }
+      const bill = tabTotal(TABLES[table], tab);
+      if (p.wallet.money < bill) {
+        send(p.ws, { t: 'broke', msg: `💸 Ví còn ${fmtMoney(p.wallet.money)}, không đủ trả ${fmtMoney(bill)}. Nhờ người khác trả, hoặc ra biển kiếm thêm nhé!` });
+        return;
+      }
+      spend(p, bill);
       tab.paidBy = p.id;
       tab.paidName = p.name;
       toTable(room, table, { t: 'paid', table, by: p.id, name: p.name, total: tabTotal(TABLES[table], tab) });
       toTable(room, table, tabMsg(room, table));
+      break;
+    }
+    case 'pay-debt': {
+      if (!(p.wallet.debt > 0) || !cooldown(p, 'pay-debt', 1000)) return;
+      if (p.f !== 0 || Math.hypot(p.x - 4.8, p.z + 1.7) > 3.5) { send(p.ws, { t: 'notice', msg: '📒 Ra quầy thu ngân tầng 1 trả nợ nhé!' }); return; }
+      const paid = Math.min(p.wallet.money, p.wallet.debt);
+      if (!paid) { send(p.ws, { t: 'broke', msg: `📒 Ví trống trơn, chưa trả nợ được. Ra biển kiếm thêm nhé!` }); return; }
+      p.wallet.money -= paid;
+      p.wallet.debt -= paid;
+      walletsDirty = true;
+      send(p.ws, walletMsg(p));
+      send(p.ws, { t: 'debt-paid', paid, left: p.wallet.debt });
       break;
     }
     case 'round': {
@@ -340,7 +543,13 @@ function handle(room, p, m) {
         send(p.ws, { t: 'notice', msg: 'Vừa bao xong mà, đợi chút nữa nhé!' });
         return;
       }
+      if (p.wallet.debt > 0) { send(p.ws, { t: 'broke', msg: `📒 Còn nợ quán ${fmtMoney(p.wallet.debt)}, trả nợ ở quầy thu ngân rồi hẵng bao nhé!` }); return; }
+      if (p.wallet.money < ROUND_PRICE) {
+        send(p.ws, { t: 'broke', msg: `💸 Bao cả quán cần ${fmtMoney(ROUND_PRICE)}, ví chỉ còn ${fmtMoney(p.wallet.money)}.` });
+        return;
+      }
       p.lastRound = Date.now();
+      spend(p, ROUND_PRICE);
       broadcast(room, { t: 'round', id: p.id, name: p.name });
       break;
     }
@@ -349,6 +558,91 @@ function handle(room, p, m) {
       if (!cooldown(p, 'mic', 3000)) { send(p.ws, { t: 'notice', msg: 'Đợi chút rồi chọn bài lại nhé' }); return; }
       joinMic(room, p, m).catch((e) => console.error('joinMic', e));
       break;
+    case 'buy-vendor': {
+      if (!cooldown(p, 'vendor', 1500)) return;
+      if (p.wallet.debt > 0) { send(p.ws, { t: 'broke', msg: `📒 Còn nợ quán ${fmtMoney(p.wallet.debt)}, trả nợ ở quầy thu ngân trước nhé!` }); return; }
+      if (p.wallet.money < VENDOR_PRICE) { send(p.ws, { t: 'broke', msg: '💸 Hết tiền mua lạc rồi, ra biển kiếm thêm nhé!' }); return; }
+      spend(p, VENDOR_PRICE);
+      send(p.ws, { t: 'vendor-ok' });
+      break;
+    }
+    case 'fish': {
+      // Câu cá: đứng ở mép nước tầng trệt. power (0..1) là độ chuẩn khi giật cần trong mini-game.
+      if (p.seat || p.f !== 0 || p.z < FISH_ZONE_Z - 0.5) { send(p.ws, { t: 'notice', msg: 'Ra sát mép nước rồi mới thả câu được!' }); return; }
+      if (!cooldown(p, 'fish', 4000)) return;
+      if (p.wallet.bag.length >= BAG_MAX) { send(p.ws, { t: 'notice', msg: '🎒 Giỏ đầy rồi, bán bớt đi đã!' }); return; }
+      const power = Math.min(1, Math.max(0, num(m.power) ?? 0));
+      if (power < 0.25) { send(p.ws, { t: 'catch', k: null }); break; }
+      // Giật càng chuẩn càng dễ dính cá to; giật lệch nhiều thì hay vớt phải dép.
+      const pool = FISH.map((f) => ({ ...f, w: f.junk ? f.w * (1.6 - power) : f.w * (f.price >= 100000 ? power * power * 1.6 : 1) }));
+      const fish = pickWeighted(pool);
+      p.wallet.bag.push(fish.k);
+      walletsDirty = true;
+      send(p.ws, { t: 'catch', k: fish.k });
+      send(p.ws, walletMsg(p));
+      if (fish.rare) broadcast(room, { t: 'notice', msg: `🎣 ${p.name} vừa câu được ${fish.icon} ${fish.name}!` });
+      break;
+    }
+    case 'pickup': {
+      const it = room.beach.get(m.id);
+      if (!it || p.f !== 0 || Math.hypot(p.x - it.x, p.z - it.z) > 2.5 || !cooldown(p, 'pickup', 300)) return;
+      if (p.wallet.bag.length >= BAG_MAX) { send(p.ws, { t: 'notice', msg: '🎒 Giỏ đầy rồi, bán bớt đi đã!' }); return; }
+      room.beach.delete(it.id);
+      p.wallet.bag.push(it.k);
+      walletsDirty = true;
+      send(p.ws, { t: 'picked', k: it.k });
+      send(p.ws, walletMsg(p));
+      broadcast(room, beachMsg(room));
+      break;
+    }
+    case 'sell': {
+      // m.k: bán một món loại đó; m.all: bán sạch giỏ
+      if (!cooldown(p, 'sell', 250)) return;
+      if (!nearTrader(p)) { send(p.ws, { t: 'notice', msg: '🧺 Mang đồ ra sạp Bà Tư (chân bậc xuống biển) mới bán được nhé!' }); return; }
+      const bag = p.wallet.bag;
+      let gain = 0;
+      if (m.all) {
+        for (const k of bag) gain += ITEMS[k]?.price || 0;
+        p.wallet.bag = [];
+      } else {
+        const i = bag.indexOf(m.k);
+        if (i < 0) return;
+        bag.splice(i, 1);
+        gain = ITEMS[m.k]?.price || 0;
+      }
+      // Đang nợ quán thì tiền bán được trừ nợ trước.
+      const toDebt = Math.min(p.wallet.debt || 0, gain);
+      if (toDebt) p.wallet.debt -= toDebt;
+      p.wallet.money += gain - toDebt;
+      walletsDirty = true;
+      send(p.ws, walletMsg(p));
+      send(p.ws, { t: 'sold', gain, toDebt });
+      break;
+    }
+    case 'open-bottle': {
+      const i = p.wallet.bag.indexOf('chai');
+      if (i < 0 || !cooldown(p, 'bottle', 800)) return;
+      p.wallet.bag.splice(i, 1);
+      walletsDirty = true;
+      const own = room.notes.filter((n) => n.pid !== p.pid);
+      const note = own.length && Math.random() < 0.5
+        ? own[Math.floor(Math.random() * own.length)]
+        : { text: BOTTLE_NOTES[Math.floor(Math.random() * BOTTLE_NOTES.length)], from: '' };
+      p.canWrite = Math.min(3, p.canWrite + 1); // mở chai rồi mới được thả lời nhắn của mình lại biển
+      send(p.ws, walletMsg(p));
+      send(p.ws, { t: 'bottle', text: note.text, from: note.from });
+      break;
+    }
+    case 'write-note': {
+      if (p.canWrite < 1 || typeof m.text !== 'string' || !cooldown(p, 'note', 3000)) return;
+      const text = m.text.slice(0, 500).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
+      if (!text) return;
+      p.canWrite--;
+      room.notes.push({ text, from: p.name, pid: p.pid });
+      if (room.notes.length > 200) room.notes.shift();
+      send(p.ws, { t: 'notice', msg: '🍾 Đã thả lời nhắn ra biển. Ai đó sẽ nhặt được!' });
+      break;
+    }
     case 'mic-duration': {
       // Người hát báo độ dài video đang phát: lượt hát kéo dài đúng hết bài (tối đa MAX_SONG_MS).
       const mic = room.mic, sec = num(m.sec);

@@ -7,6 +7,7 @@ import {
   ROOMS, TABLES, STAGE, MENU, MENU_CATS, SHIRTS, HAIRS, SONG_MS, MIC_DELAY_MS,
   FLOOR_H, FLOOR_NAMES, FLOOR_BOUNDS, SHORE, BUILDING, CORE, ELEVATOR, KITCHEN, WCS, DUMBWAITER, PARKING,
   GOLDEN_EVERY, GOLDEN_MS, MAX_SONG_MS, CHAT_MAX, seatPos, seatYaw, nearestFreeSeat, DRINKS, drinkOfTable, tabTotal,
+  START_MONEY, ROUND_PRICE, VENDOR_PRICE, ITEMS, FISH_ZONE_Z, TRADER, nearTrader,
 } from '/shared/world.js';
 import { SONGS, GENRES, DEFAULT_SONG, parseYouTube } from '/shared/songs.js';
 
@@ -14,7 +15,6 @@ import { SONGS, GENRES, DEFAULT_SONG, parseYouTube } from '/shared/songs.js';
 // Tài khoản nhận ủng hộ ("Bao chủ quán một ly"), ảnh QR ở public/donate-qr.png.
 const DONATE = { bank: 'BIDV', owner: 'NGUYEN XUAN DOAN', account: '2152971408' };
 const BEER = DRINKS.beer; // giá đồ uống dùng chung với server (shared/world.js)
-const ROUND_PRICE = 500000;
 const HAIR_COLORS = [0x1b1b1b, 0x3b2314, 0x5a3a22, 0x111111];
 const drinkOf = (tableId) => drinkOfTable(TABLES[tableId]);
 const tableName = (T) => T.name;
@@ -23,12 +23,19 @@ const LINES = {
   chuBa: ['Hồi xưa chú đi bộ đội…', 'Rượu này chú ngâm mười năm đấy.', 'Đời mà con, vui được ngày nào hay ngày đó.',
     'Con có người yêu chưa?', 'Uống rượu phải từ từ, ngấm mới ngon.', 'Ngồi đây với chú một lát.'],
   chuBaCheers: ['Cạn!', 'Dzô con!', 'Uống cho ấm bụng!'],
+  traderBuy: ['Có gì đưa bà coi nào!', 'Cá tươi không con? Bà trả giá cao!', 'Cua ốc gì bà cũng lấy hết!'],
+  traderEmpty: ['Giỏ trống trơn mà con! Ra bãi nhặt cua ốc đi rồi đem lại bà mua.', 'Câu được cá thì mang lại đây bà mua nghen!'],
+  traderPaid: ['Tiền đây con, đi nhậu tiếp đi!', 'Hàng ngon, lần sau mang nữa nghe!', 'Bà trả sòng phẳng nhé!'],
   chuBaReply: ['Ừ, chú nghe đây.', 'Nói hay lắm, dzô cái nào!', 'Hồi xưa chú cũng thế.', 'Thôi uống đi con, chuyện đâu còn đó.',
     'Ha ha, con nói chí phải!', 'Tuổi trẻ mà, cứ từ từ.'],
   owner: ['Ăn gì gọi chị nhé!', 'Mực nướng hôm nay tươi lắm!', 'Bàn ngoài kia tính tiền chưa em?'],
   vendor: ['Lạc rang đây!', 'Đậu phộng nóng đây!', 'Mua giúp cô gói lạc đi con!'],
   guard: ['Xe để đây bác trông cho, yên tâm mà nhậu!', 'Say thì để xe lại, mai lấy nhé con.', 'Gió biển đêm nay mát ghê.'],
   waiter: ['Tầng này có thang tời, đồ ăn lên nhanh lắm ạ!', 'Cần thêm đá cứ gọi em nhé!', 'Phòng view biển đẹp nhất quán đó ạ.'],
+  orderTaker: ['Anh chị gọi thêm gì không ạ?', 'Bàn mình thêm bia không anh?', 'Hôm nay có mực trứng ngon lắm ạ!', 'Em ghi order cho nhé!'],
+  runner: ['Món ra đây ạ, nóng lắm cẩn thận!', 'Của anh chị đây ạ!', 'Mời cả bàn dùng ngon ạ!'],
+  prep: ['Rau sạch vừa nhặt xong đây!', 'Hành phi thơm chưa?', 'Thái nhanh không đứt tay đâu, nghề rồi!'],
+  dishwasher: ['Bát đĩa chất cao như núi rồi!', 'Rửa sạch bong kin kít luôn!', 'Ai ăn xong cho cô xin đĩa nhé!'],
   chef: ['Bếp nóng lắm, đứng xa ra kẻo bỏng!', 'Mực hôm nay tươi rói, gọi đi!', 'Nấu ba chục năm rồi đấy.',
     'Lẩu thái phải chua cay mới đúng vị.', 'Ra ngoài uống đi, đồ ăn chú mang ra ngay.'],
 };
@@ -180,6 +187,23 @@ function navGrid(f) {
   for (const c of colliders[f].circles) mark(c.x - c.r, c.x + c.r, c.z - c.r, c.z + c.r, (x, z) => Math.hypot(x - c.x, z - c.z) < c.r + CLEAR);
   for (const b of colliders[f].boxes) (b.door !== undefined ? g.doors.push(b) : g.markBox(b));
   return (navGrids[f] = g);
+}
+
+// Ô đi được gần (x,z) nhất: dùng để đặt nhân viên không chồng lên bàn ghế, tường, đồ vật.
+function freeSpot(f, x, z) {
+  const g = navGrid(f), { B, w, h } = g;
+  const i0 = clamp(Math.round((x - B.minX) / CELL), 0, w - 1), j0 = clamp(Math.round((z - B.minZ) / CELL), 0, h - 1);
+  for (let r = 0; r <= 16; r++) {
+    let best = null, bd = Infinity;
+    for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) {
+      const i = i0 + di, j = j0 + dj;
+      if (Math.max(Math.abs(di), Math.abs(dj)) !== r || i < 0 || j < 0 || i >= w || j >= h || g.cells[j * w + i]) continue;
+      const d = di * di + dj * dj;
+      if (d < bd) { bd = d; best = { x: B.minX + i * CELL, z: B.minZ + j * CELL }; }
+    }
+    if (best) return best;
+  }
+  return { x, z };
 }
 
 // Trả về các điểm rẽ từ (sx,sz) tới đích (bỏ điểm xuất phát), đích bị chặn thì dừng ở ô trống gần nhất. null nếu không có đường.
@@ -412,6 +436,7 @@ for (let x = -150; x <= 150; x += 9) {
   if (Math.abs(px) < SHORE.halfW + 1) solidCircle(0, px, 12.2, 0.25);
 }
 for (let x = -144; x <= 144; x += 18) {
+  if (x === 0) continue; // không dựng cột giữa vạch qua đường, khỏi che mặt tiền quán
   cyl(0.06, 0.08, 5, 0x37474f, x, 2.5, 11.2);
   if (Math.abs(x) < SHORE.halfW + 1) solidCircle(0, x, 11.2, 0.12);
   ball(0.16, new THREE.MeshBasicMaterial({ color: 0xfff1c1 }), x, 5.05, 11.2);
@@ -1265,7 +1290,29 @@ for (const dz of [-1.5, 1.5]) {
   box(0.5, 1, 0.5, 0x212121, STAGE.x + 1.6, 0.5, STAGE.z + dz, F3);
   cyl(0.15, 0.15, 0.02, 0x555555, STAGE.x + 1.34, 0.6, STAGE.z + dz, F3).rotation.z = Math.PI / 2;
 }
-cyl(0.015, 0.015, 1.3, 0x888888, STAGE.x - 0.1, 0.85, STAGE.z, F3);
+// Chân micro mạ vàng kiểu cổ điển: đế tròn, ống dưới to, khớp nối, ống trên nhỏ, đầu mic tròn có lưới.
+{
+  const gold = mat(0xd4af37, { metalness: 0.85, roughness: 0.25 });
+  const g = new THREE.Group();
+  g.position.set(STAGE.x - 0.1, 0.2, STAGE.z);
+  F3.add(g);
+  cyl(0.15, 0.17, 0.03, gold, 0, 0.015, 0, g); // đế
+  cyl(0.05, 0.08, 0.05, gold, 0, 0.05, 0, g);
+  cyl(0.035, 0.035, 0.05, 0xdddddd, 0, 0.1, 0, g); // vòng bạc chân
+  cyl(0.016, 0.016, 0.72, gold, 0, 0.48, 0, g); // ống dưới
+  cyl(0.024, 0.024, 0.1, gold, 0, 0.87, 0, g); // khớp nối
+  cyl(0.011, 0.011, 0.5, gold, 0, 1.15, 0, g); // ống trên
+  cyl(0.016, 0.016, 0.03, 0x1565c0, 0, 1.33, 0, g); // nút xanh
+  cyl(0.018, 0.022, 0.06, gold, 0, 1.42, 0, g); // kẹp mic
+  // đầu mic: khung vàng hình viên thuốc, lưới đen có các khe ngang
+  const head = new THREE.Group();
+  head.position.set(0, 1.53, 0);
+  head.rotation.z = 0.12;
+  g.add(head);
+  add(new THREE.CapsuleGeometry(0.045, 0.07, 6, 16), gold, 0, 0, 0, head).scale.set(1, 1, 0.75);
+  add(new THREE.CapsuleGeometry(0.036, 0.06, 6, 16), 0x1a1a1a, 0, 0, 0, head).scale.set(1.06, 1, 0.95);
+  for (let i = -3; i <= 3; i++) box(0.085, 0.006, 0.075, gold, 0, i * 0.018, 0, head);
+}
 const karaokeTex = canvasTexture(512, 128, (g, w, h) => {
   g.fillStyle = '#12001a';
   g.fillRect(0, 0, w, h);
@@ -1311,7 +1358,7 @@ function drawScreen(title, by) {
   g.fillText(title || 'Lên sân khấu để hát', w / 2, h * 0.58, w - 40);
   g.fillStyle = '#b3e5fc';
   g.font = '26px sans-serif';
-  g.fillText(title ? by || '' : 'chọn bài · dán link YouTube', w / 2, h * 0.76, w - 40);
+  g.fillText(title ? by || '' : 'chọn bài · tìm trên YouTube', w / 2, h * 0.76, w - 40);
   screenTex.needsUpdate = true;
 }
 drawScreen('', '');
@@ -1809,7 +1856,7 @@ const PERSON_HIP = 0.5; // độ cao hông khi đứng
 const SEAT_DROP = -0.12; // hạ thân khi ngồi ghế nhựa
 const SKIN_DEFAULT = 0xf0b27a;
 function makePerson(o = {}) {
-  const { shirt = 0x2e86de, pants = 0x2d3436, skin = SKIN_DEFAULT, hair = 0x1b1b1b, bald = false, female = false, belly = 1, hat = false, chefHat = false } = o;
+  const { shirt = 0x2e86de, pants = 0x2d3436, skin = SKIN_DEFAULT, hair = 0x1b1b1b, bald = false, female = false, belly = 1, hat = false, chefHat = false, skirt = 0, bow = 0 } = o;
   const root = new THREE.Group();
   const body = new THREE.Group();
   root.add(body);
@@ -1833,6 +1880,7 @@ function makePerson(o = {}) {
   const torso = add(new THREE.CapsuleGeometry(0.2 * belly, 0.16, 6, 14), shirt, 0, HIP + 0.2, 0, body);
   torso.scale.z = 0.85;
   cyl(0.2 * belly, 0.19 * belly, 0.1, pants, 0, HIP + 0.02, 0, body).scale.z = 0.85;
+  if (skirt) cyl(0.2, 0.3, 0.26, skirt, 0, HIP - 0.06, 0, body).scale.z = 0.85; // váy xoè
 
   // đầu to
   const head = new THREE.Group();
@@ -1862,6 +1910,10 @@ function makePerson(o = {}) {
   if (female) {
     const back = add(new THREE.CapsuleGeometry(0.2, 0.18, 6, 12), hair, 0, -0.12, -0.17, head);
     back.scale.z = 0.6;
+  }
+  if (bow) { // nơ cài tóc
+    for (const sx of [-1, 1]) ball(0.07, bow, 0.17 + sx * 0.07, 0.22, -0.05, head).scale.set(1, 0.7, 0.5);
+    ball(0.035, bow, 0.17, 0.22, -0.04, head);
   }
   if (hat) add(new THREE.ConeGeometry(0.46, 0.2, 18), 0xd4b483, 0, 0.32, 0, head); // nón lá
   if (chefHat) {
@@ -1988,8 +2040,12 @@ clickable(box(3, 1.8, 1.4, HIT_MAT, 4.8, 0.9, -2.7, F1), {
   f: 0,
   pos: () => ({ x: 4.8, z: -1.7 }),
   range: 1.6,
-  label: () => 'gọi món / tính tiền ở <b>quầy thu ngân</b>',
-  action: () => { speak(owner, 'Em ăn gì nào?'); openMenu(); },
+  label: () => (wallet.debt > 0 ? `📒 <b>trả nợ</b> ${fmt(wallet.debt)} ở quầy thu ngân` : 'gọi món / tính tiền ở <b>quầy thu ngân</b>'),
+  action: () => {
+    if (wallet.debt > 0) { speak(owner, 'Trả nợ hả em? Để chị gạch sổ.'); send({ t: 'pay-debt' }); return; }
+    speak(owner, 'Em ăn gì nào?');
+    openMenu();
+  },
 });
 
 const vendor = createActor({ shirt: 0x8d6e63, hair: 0x333333, female: true, hat: true }, 'Cô bán lạc', 'npc');
@@ -2004,9 +2060,10 @@ clickable(add(new THREE.CylinderGeometry(0.5, 0.5, 1.8, 8), HIT_MAT, 0, 0.9, 0, 
   range: 1.8,
   label: () => 'mua <b>lạc rang</b> (15k)',
   action: () => {
-    speak(vendor, 'Cảm ơn con nhé!');
-    state.extras.push(MENU[0]);
-    speak(meA, '🥜 nhai lạc', 2000);
+    if (net.online) {
+      if (wallet.money < VENDOR_PRICE) return toast('💸 Hết tiền mua lạc rồi, ra biển kiếm thêm nhé!');
+      send({ t: 'buy-vendor' }); // server trừ tiền xong báo vendor-ok
+    } else onMessage({ t: 'vendor-ok' });
   },
 });
 const chef = createActor({ shirt: 0xffffff, pants: 0x37474f, chefHat: true, belly: 1.25 }, 'Đầu bếp Tâm', 'npc');
@@ -2026,7 +2083,7 @@ const waiter = createActor({ shirt: 0x1b5e20, female: true, hair: 0x2b1a0e }, 'E
 placeAt(waiter, 4.2, -14.4, 0, 1);
 clickable(add(new THREE.CylinderGeometry(0.5, 0.5, 1.8, 8), HIT_MAT, 0, 0.9, 0, waiter.person.root), {
   f: 1,
-  pos: () => ({ x: 4, z: -9.6 }),
+  pos: () => waiter,
   range: 1.8,
   label: () => 'gọi thêm bia đá với <b>em phục vụ</b>',
   action: () => { speak(waiter, 'Anh chị dùng gì ạ?'); openMenu(); },
@@ -2042,7 +2099,362 @@ clickable(add(new THREE.CylinderGeometry(0.5, 0.5, 1.8, 8), HIT_MAT, 0, 0.9, 0, 
   label: () => 'nói chuyện với <b>bác giữ xe</b>',
   action: () => speak(guard, pick(LINES.guard)),
 });
-const npcs = [chuBa, owner, vendor, chef, waiter, guard];
+// Bà Tư thu mua hải sản, ve chai: sạp nhỏ dưới chân bậc xuống biển, khách đem đồ trong giỏ ra đây bán.
+const trader = createActor({ shirt: 0x1565c0, hair: 0x9e9e9e, female: true, hat: true, belly: 1.15, skin: 0xc68a5a }, 'Bà Tư thu mua', 'npc');
+// Sạp vuông, quầy ở cả 4 phía nên đi hướng nào tới cũng thấy và bán được; bà đứng giữa.
+const STALL = 1.1; // nửa cạnh sạp
+{
+  const T = TRADER, g = new THREE.Group(), S = STALL, d = 0.45, c = S - d / 2;
+  g.position.set(T.x, 0, T.z);
+  scene.add(g);
+  const sides = [ // [hướng x, hướng z, góc quay mặt ra ngoài, đồ bày trên quầy]
+    [0, 1, 0, ['🐟', '🦀']], [0, -1, Math.PI, ['🐚', '🦐']], [1, 0, Math.PI / 2, ['🍾', '🐟']], [-1, 0, -Math.PI / 2, ['🦑', '🐚']],
+  ];
+  for (const [sx, sz, ry, icons] of sides) {
+    const along = sx ? [d, 2 * S] : [2 * S, d]; // quầy chạy dọc cạnh
+    box(along[0], 0.08, along[1], 0x8d6e63, sx * c, 0.72, sz * c, g); // mặt quầy
+    box(sx ? 0.04 : 2 * S, 0.4, sx ? 2 * S : 0.04, 0xa1887f, sx * (S - 0.02), 0.45, sz * (S - 0.02), g); // tấm chắn ngoài
+    icons.forEach((icon, i) => {
+      const off = (i - 0.5) * 0.9, x = sx * c + (sx ? 0 : off), z = sz * c + (sz ? 0 : off);
+      cyl(0.2, 0.15, 0.12, 0x29b6f6, x, 0.82, z, g);
+      const sp = emojiSprite(icon, 0.3);
+      sp.position.set(x, 0.98, z);
+      g.add(sp);
+    });
+    // biển hiệu treo dưới mép mái, mỗi phía một tấm
+    textPlane(g, 'THU MUA HẢI SẢN · VE CHAI', 1.9, 0.28, sx * (S + 0.06), 2.02, sz * (S + 0.06), ry, { bg: '#0d47a1', fg: '#ffeb3b', font: 'bold 60px sans-serif' });
+  }
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(0.07, 2.2, 0.07, 0x5d4037, sx * (S - 0.04), 1.1, sz * (S - 0.04), g); // 4 cột góc
+  cyl(0.14, 0.14, 0.02, 0xb0bec5, S - 0.3, 0.78, S - 0.3, g); // cân đĩa
+  box(0.1, 0.12, 0.1, 0xd32f2f, S - 0.3, 0.84, S - 0.3, g);
+  ball(0.32, 0xcfd8dc, -S - 0.45, 0.3, S - 0.2, g); // bao ve chai
+  // mái chóp 4 mặt che nắng
+  const roof = add(new THREE.ConeGeometry(S * 1.75, 0.6, 4, 1, true), mat(0xff7043, { side: THREE.DoubleSide }), 0, 2.45, 0, g);
+  roof.rotation.y = Math.PI / 4;
+  solidBox(0, T.x, T.z, 2 * S + 0.1, 2 * S + 0.1);
+}
+placeAt(trader, TRADER.x, TRADER.z, 0, 0); // mặc định nhìn ra biển
+trader.fixedArms = -0.6;
+// Chỗ đứng giao dịch: ngay ngoài quầy, ở phía người chơi đang đứng.
+function traderSpot() {
+  const dx = meA.x - TRADER.x, dz = meA.z - TRADER.z, d = Math.hypot(dx, dz) || 1;
+  return { x: TRADER.x + (dx / d) * (STALL + 0.45), z: TRADER.z + (dz / d) * (STALL + 0.45) };
+}
+clickable(add(new THREE.CylinderGeometry(STALL + 0.2, STALL + 0.2, 1.8, 12), HIT_MAT, 0, 0.9, 0, trader.person.root), {
+  f: 0,
+  pos: traderSpot,
+  range: 1.0,
+  label: () => `bán đồ cho <b>Bà Tư</b> (🎒 ${wallet.bag.length})`,
+  action: () => {
+    speak(trader, pick(wallet.bag.length ? LINES.traderBuy : LINES.traderEmpty), 3000);
+    openBag();
+  },
+});
+// Bà xoay theo người đứng gần quầy nhất (người đang giao dịch); không ai thì quay ra biển.
+function updateTrader(dt) {
+  let best = null, bestD = TRADER.range;
+  for (const a of allActors()) {
+    if (a.f !== 0 || a.seat) continue;
+    const d = Math.hypot(a.rx - TRADER.x, a.rz - TRADER.z);
+    if (d < bestD) { best = a; bestD = d; }
+  }
+  const want = best ? Math.atan2(best.rx - TRADER.x, best.rz - TRADER.z) : 0;
+  trader.yaw = lerpAngle(trader.yaw, want, Math.min(1, dt * 4));
+}
+const npcs = [chuBa, owner, vendor, chef, waiter, guard, trader];
+
+// ================= Nhân viên quán =================
+// Chạy bàn 5 người: 1 em nhận order đi vòng các bàn tầng 1, 2 em bưng bê tầng 1 (bếp ra bàn),
+// 1 em bưng bê sân thượng (thang tời ra bàn), cộng em phục vụ tầng 2 ở trên.
+// Bếp: 2 đầu bếp chính (đứng chảo: Tâm, đứng thớt: Lan), phụ bếp sơ chế (Út) và cô rửa chén (Mận).
+// Chỉ là diễn hoạt phía máy khách; món vẫn do server ghi vào hoá đơn như cũ.
+const staff = []; // { a, speed, route, then, tick, ... }
+function addStaff(opts, name, f, x, z, yaw, extra = {}) {
+  const a = createActor(opts, name, 'npc');
+  placeAt(a, x, z, yaw, f);
+  npcs.push(a);
+  const st = { a, speed: 1.7, route: [], then: null, ...extra };
+  staff.push(st);
+  return st;
+}
+// Trả về false nếu không có đường (ví dụ phòng riêng đang khoá cửa).
+function staffGo(st, x, z, then) {
+  const path = findPath(st.a.f, st.a.x, st.a.z, x, z);
+  st.route = path ? path.slice() : [{ x, z }];
+  st.then = then;
+  return !!path;
+}
+// Đi tới phục vụ một bàn: thử chỗ mong muốn (vd. sau lưng khách), rồi mép bàn (bàn phòng riêng: phía cửa,
+// vì ghế bàn dài xếp kín), cuối cùng đứng ngoài cửa nếu phòng riêng đang khoá.
+function goServe(st, T, want, then) {
+  if (want && staffGo(st, want.x, want.z, then)) return;
+  const edge = T.room ? { x: T.x, z: T.z + Math.sign(T.room.doorZ - T.z) * ((T.shape === 'long' ? T.w / 2 : T.r) + 1) } : T;
+  if (staffGo(st, edge.x, edge.z, then) || !T.room) return;
+  staffGo(st, T.x, T.room.doorZ + (T.z > T.room.doorZ ? -0.6 : 0.6), then);
+}
+
+// Khay trên tay nhân viên bưng bê (ẩn khi không mang gì).
+function addTray(a) {
+  const tray = new THREE.Group();
+  tray.position.set(0, 0.82, 0.42);
+  cyl(0.18, 0.18, 0.02, 0x9e9e9e, 0, 0, 0, tray);
+  tray.visible = false;
+  a.person.body.add(tray);
+  return tray;
+}
+function carry(st, icon) {
+  st.tray.visible = !!icon;
+  st.a.fixedArms = icon ? -1.3 : 0;
+  if (st.food) { st.tray.remove(st.food); st.food = null; }
+  if (icon) {
+    st.food = emojiSprite(icon, 0.24);
+    st.food.position.y = 0.12;
+    st.tray.add(st.food);
+  }
+}
+
+// Bếp: đầu bếp đứng thớt, bồn rửa và cô rửa chén
+const chef2 = addStaff({ shirt: 0xffffff, pants: 0x37474f, chefHat: true, female: true, hair: 0x2b1a0e }, 'Bếp phó Lan', 0, 6.0, -12.4, Math.PI);
+chef2.a.fixedArms = -1.0;
+chef2.a.stir = true;
+box(0.7, 0.9, 1.3, steelMat(), KITCHEN.minX + 0.45, 0.45, -13.4, F1); // bồn rửa
+box(0.55, 0.06, 1.1, 0x90a4ae, KITCHEN.minX + 0.45, 0.91, -13.4, F1);
+for (let i = 0; i < 5; i++) cyl(0.13, 0.1, 0.02, 0xffffff, KITCHEN.minX + 0.4, 0.94 + i * 0.03, -12.95, F1); // chồng đĩa
+solidBox(0, KITCHEN.minX + 0.45, -13.4, 0.7, 1.3);
+const washer = addStaff({ shirt: 0x8e24aa, female: true, hair: 0x5d4037, belly: 1.1 }, 'Cô rửa chén Mận', 0, KITCHEN.minX + 1.15, -13.4, -Math.PI / 2);
+washer.a.fixedArms = -0.9;
+washer.a.stir = true;
+// Phụ bếp: chạy qua lại tủ lạnh ↔ bàn sơ chế, mang rau ra cho bếp
+const prep = addStaff({ shirt: 0xf5f5f5, pants: 0x5d4037, hair: 0x1b1b1b }, 'Phụ bếp Út', 0, 7.6, -12.4, Math.PI, { wait: 2 });
+prep.tray = addTray(prep.a);
+prep.tick = (st, dt) => {
+  if ((st.wait -= dt) > 0) return;
+  st.wait = 2 + Math.random() * 2;
+  const toFridge = !st.atFridge;
+  staffGo(st, toFridge ? 10.5 : 7.6, toFridge ? -14.2 : -12.4, () => {
+    st.atFridge = toFridge;
+    st.a.yaw = toFridge ? Math.PI / 2 : Math.PI;
+    if (toFridge) setTimeout(() => carry(st, pick(['🥬', '🧅', '🦑', '🥩'])), 600); // lấy đồ trong tủ
+    else carry(st, null); // đặt xuống bàn sơ chế
+  });
+};
+
+// Chạy bàn: bưng bê (lấy món ở cửa bếp / thang tời rồi mang ra bàn)
+const RUNNER_SPOTS = {
+  0: { pickup: { x: 9.3, z: -12.8 } },
+  1: { pickup: { x: 3.6, z: -14.2 } }, // thang tời tầng phòng riêng
+  2: { pickup: { x: DUMBWAITER.x + 0.6, z: DUMBWAITER.z + 1.1 } },
+};
+const runners = [
+  addStaff({ shirt: 0xd32f2f, hair: 0x1b1b1b }, 'Em bưng Tí', 0, 8.6, -11.2, 0, { home: { x: 8.6, z: -11.2 } }),
+  addStaff({ shirt: 0xd32f2f, female: true, hair: 0x2b1a0e }, 'Em bưng Na', 0, 10.0, -11.2, 0, { home: { x: 10.0, z: -11.2 } }),
+  addStaff({ shirt: 0x1e88e5, hair: 0x3e2723 }, 'Em bưng Tèo', 2, DUMBWAITER.x + 1.2, DUMBWAITER.z + 1.8, 0,
+    { home: { x: DUMBWAITER.x + 1.2, z: DUMBWAITER.z + 1.8 } }),
+];
+for (const r of runners) { r.tray = addTray(r.a); r.speed = 2.1; }
+const deliveries = []; // { table, item, done }
+// Món của mọi tầng: em bưng bê mang ra, tới bàn mới bày món. Quá 60 giây chưa tới thì bày luôn.
+function deliverDish(table, item) {
+  const d = { table, item, done: false };
+  d.timer = setTimeout(() => finishDelivery(d), 60000);
+  // Đã có em đang bưng cho bàn này mà chưa tới nơi thì bưng luôn món mới trong cùng chuyến.
+  const r = runners.find((r) => r.job && !r.job.served && r.job[0].table === table);
+  if (r) { r.job.push(d); return; }
+  deliveries.push(d);
+  assignRunners();
+}
+function finishDelivery(d, runner) {
+  if (d.done) return;
+  d.done = true;
+  clearTimeout(d.timer);
+  serveDish(d.table, d.item);
+  if (runner) speak(runner.a, `${MENU[d.item].icon} ${pick(LINES.runner)}`, 2200);
+}
+function assignRunners() {
+  for (const r of runners) {
+    if (r.job) continue;
+    const i = deliveries.findIndex((d) => !d.done && TABLES[d.table].floor === r.a.f);
+    if (i < 0) continue;
+    // Bưng một lượt mọi món đang chờ của cùng bàn đó.
+    const table = deliveries[i].table, T = TABLES[table], P = RUNNER_SPOTS[r.a.f].pickup;
+    const batch = deliveries.filter((d) => !d.done && d.table === table);
+    for (const d of batch) deliveries.splice(deliveries.indexOf(d), 1);
+    r.job = batch;
+    staffGo(r, P.x, P.z, () => setTimeout(() => {
+      const first = batch.find((d) => !d.done);
+      if (!first) return runnerHome(r);
+      carry(r, MENU[first.item].icon);
+      const serve = () => {
+        batch.served = true;
+        carry(r, null);
+        r.a.yaw = Math.atan2(T.x - r.a.x, T.z - r.a.z);
+        batch.filter((d) => !d.done).forEach((d, k) => finishDelivery(d, k ? null : r));
+        setTimeout(() => runnerHome(r), 700);
+      };
+      goServe(r, T, null, serve);
+    }, 500));
+  }
+}
+function runnerHome(r) {
+  carry(r, null);
+  r.job = null;
+  if (deliveries.some((d) => !d.done && TABLES[d.table].floor === r.a.f)) return assignRunners();
+  staffGo(r, r.home.x, r.home.z, () => (r.a.yaw = 0));
+}
+
+// Em nhận order: đi vòng các bàn tầng 1, đứng lại hỏi khách; bấm vào em là gọi món.
+const orderTaker = addStaff({ shirt: 0x2e7d32, female: true, hair: 0x1a0f08 }, 'Em order Vy', 0, 0, 0.6, 0, { wait: 3 });
+orderTaker.speed = 1.3;
+// Đi vòng hỏi order, ưu tiên bàn có khách. anyChance: tỉ lệ ghé bàn bất kỳ (0 = chỉ bàn có khách,
+// tầng không có khách thì về chỗ đứng).
+function roamTick(f, spotOf, lines, anyChance = 0) {
+  return (st, dt) => {
+    if (st.job || (st.wait -= dt) > 0) return;
+    st.wait = 3 + Math.random() * 4;
+    const all = TABLES.filter((T) => T.floor === f && (f !== 0 || !T.private));
+    const busy = all.filter((T) => seatedAt(T.id) > 0);
+    const T = busy.length && Math.random() >= anyChance ? pick(busy) : anyChance ? pick(all) : null;
+    if (!T) {
+      if (st.home && Math.hypot(st.a.x - st.home.x, st.a.z - st.home.z) > 0.5) staffGo(st, st.home.x, st.home.z, () => (st.a.yaw = st.home.yaw ?? 0));
+      return;
+    }
+    const p = spotOf(T);
+    staffGo(st, p.x, p.z, () => {
+      st.a.yaw = Math.atan2(T.x - st.a.x, T.z - st.a.z);
+      if (meA?.f === f && Math.hypot(meA.rx - st.a.rx, meA.rz - st.a.rz) < 5) speak(st.a, pick(lines), 2500);
+    });
+  };
+}
+const tableSpot = (T) => ({ x: T.x, z: T.z }); // tới sát bàn (đường đi tự dừng ở ô trống cạnh bàn)
+orderTaker.tick = roamTick(0, tableSpot, LINES.orderTaker, 0.3);
+// Tầng 2: em phục vụ đi dọc hành lang ghé cửa những phòng có khách. Sân thượng: em bưng Tèo rảnh thì đi hỏi order.
+const waiterSt = { a: waiter, speed: 1.8, route: [], then: null, wait: 4, home: { x: 4.2, z: -14.4, yaw: 0 } };
+staff.push(waiterSt);
+waiterSt.tick = roamTick(1, (T) => ({ x: T.x, z: -8.5 }), LINES.orderTaker);
+// Em phục vụ tầng 2 kiêm bưng bê: lấy món ở thang tời rồi bưng vào tận phòng.
+waiterSt.tray = addTray(waiter);
+runners.push(waiterSt);
+const teo = runners[2];
+teo.wait = 4;
+teo.tick = roamTick(2, tableSpot, LINES.orderTaker);
+clickable(add(new THREE.CylinderGeometry(0.5, 0.5, 1.8, 8), HIT_MAT, 0, 0.9, 0, teo.a.person.root), {
+  f: 2,
+  pos: () => teo.a,
+  range: 1.8,
+  label: () => 'gọi món với <b>em Tèo</b>',
+  action: () => { speak(teo.a, 'Dạ anh chị gọi gì ạ?'); openMenu(); },
+});
+clickable(add(new THREE.CylinderGeometry(0.5, 0.5, 1.8, 8), HIT_MAT, 0, 0.9, 0, orderTaker.a.person.root), {
+  f: 0,
+  pos: () => orderTaker.a,
+  range: 1.8,
+  label: () => 'gọi món với <b>em order</b>',
+  action: () => { speak(orderTaker.a, 'Anh chị dùng gì ạ? Em ghi luôn!'); openMenu(); },
+});
+for (const [st, lines] of [[chef2, LINES.chef], [washer, LINES.dishwasher], [prep, LINES.prep]]) {
+  clickable(add(new THREE.CylinderGeometry(0.5, 0.5, 1.8, 8), HIT_MAT, 0, 0.9, 0, st.a.person.root), {
+    f: 0,
+    pos: () => st.a,
+    range: 2,
+    label: () => `nói chuyện với <b>${st.a.name}</b>`,
+    action: () => speak(st.a, pick(lines)),
+  });
+}
+
+// Em rót bia: mỗi tầng một em. Bấm "Rót" là em tới bàn, rót lần lượt cho những ai đang có ly rỗng
+// (server chọn người và tính tiền, xem 'pour-round').
+const BEER_GIRL_LOOK = { shirt: 0xe53935, pants: 0xf5f5f5, skirt: 0xc62828, female: true, hair: 0x3e2723, bow: 0xff80ab, skin: 0xf6c49a };
+const beerGirls = [
+  // sát tường trái giữa hai khung thơ, quay mặt vào quán
+  addStaff(BEER_GIRL_LOOK, 'Em rót bia Hồng', 0, -17.4, -5.6, Math.PI / 2, { home: { x: -17.4, z: -5.6, yaw: Math.PI / 2 }, jobs: [] }),
+  // giữa hành lang phòng riêng: các phòng đều mở cửa ra hành lang
+  addStaff({ ...BEER_GIRL_LOOK, hair: 0x1a0f08 }, 'Em rót bia Mai', 1, 0, -8.5, 0, { home: { x: 0, z: -8.5, yaw: 0 }, jobs: [] }),
+  // giữa khu bàn sân thượng, sát lan can, quay mặt vào trong
+  addStaff({ ...BEER_GIRL_LOOK, hair: 0x5d4037 }, 'Em rót bia Thảo', 2, 0, -2.0, Math.PI, { home: { x: 0, z: -2.0, yaw: Math.PI }, jobs: [] }),
+];
+for (const g of beerGirls) { g.tray = addTray(g.a); g.speed = 2; }
+let pourPending = false; // em đang tới rót cho mình (server đã tính tiền ly này)
+function pourRound(m) {
+  const T = TABLES[m.table], g = beerGirls[T.floor];
+  if (m.ids.includes(myId)) pourPending = true;
+  const job = { table: m.table, ids: m.ids.slice() };
+  // Quá lâu chưa tới (kẹt đường, cửa khoá) thì ly của mình tự đầy.
+  job.timer = setTimeout(() => { if (job.ids.includes(myId)) fillMine(); }, 40000);
+  g.jobs.push(job);
+  if (m.by === myId) speak(g.a, 'Dạ em tới liền! 🍺', 2000);
+  if (!g.busy) nextPour(g);
+}
+function fillMine() {
+  if (!pourPending) return;
+  pourPending = false;
+  if (meA.seat && state.fill < 0.5) setFill(0.95);
+}
+function nextPour(g) {
+  const job = g.jobs[0];
+  if (!job) {
+    g.busy = false;
+    g.speed = 2;
+    carry(g, null);
+    staffGo(g, g.home.x, g.home.z, () => (g.a.yaw = g.home.yaw ?? 0));
+    return;
+  }
+  g.busy = true;
+  carry(g, '🍺');
+  const id = job.ids.shift();
+  if (!job.ids.length && id === undefined) { clearTimeout(job.timer); g.jobs.shift(); return nextPour(g); }
+  const a = actorById(id), T = TABLES[job.table];
+  const done = () => {
+    if (!job.ids.length) { clearTimeout(job.timer); g.jobs.shift(); }
+    nextPour(g);
+  };
+  if (!a?.seat || a.seat.table !== job.table) { if (id === myId) fillMine(); return done(); }
+  // đứng sau lưng người được rót, phía ngoài bàn
+  const dx = a.rx - T.x, dz = a.rz - T.z, d = Math.hypot(dx, dz) || 1;
+  g.speed = Math.hypot(a.rx - g.a.x, a.rz - g.a.z) > 8 ? 3.1 : 2; // bàn xa thì đi gấp
+  goServe(g, T, { x: a.rx + (dx / d) * 0.55, z: a.rz + (dz / d) * 0.55 }, () => {
+    g.a.yaw = Math.atan2(a.rx - g.a.x, a.rz - g.a.z);
+    playAct(g.a, 'pour');
+    if (meA?.f === g.a.f && Math.hypot(meA.rx - g.a.rx, meA.rz - g.a.rz) < 6) pourSound();
+    setTimeout(() => {
+      if (a === meA) { fillMine(); speak(g.a, 'Mời anh chị ạ! 🍺', 1500); }
+      done();
+    }, 1000);
+  });
+}
+
+// Lần chạy đầu (đã dựng xong cả quán): ai đứng trúng bàn ghế, tường thì dời ra ô trống gần nhất, kể cả chỗ đứng chờ.
+let staffSettled = false;
+function settleStaff() {
+  staffSettled = true;
+  for (const st of staff) {
+    const p = freeSpot(st.a.f, st.a.x, st.a.z);
+    placeAt(st.a, p.x, p.z, st.a.yaw);
+    if (st.home) Object.assign(st.home, freeSpot(st.a.f, st.home.x, st.home.z));
+  }
+}
+function updateStaff(dt) {
+  if (!staffSettled) settleStaff();
+  for (const st of staff) {
+    const a = st.a;
+    if (st.route.length) {
+      const wp = st.route[0], dx = wp.x - a.x, dz = wp.z - a.z, d = Math.hypot(dx, dz), step = st.speed * dt;
+      if (d <= step) {
+        a.x = wp.x;
+        a.z = wp.z;
+        st.route.shift();
+      } else {
+        a.x += (dx / d) * step;
+        a.z += (dz / d) * step;
+        a.yaw = Math.atan2(dx, dz);
+      }
+      if (!st.route.length) {
+        const then = st.then;
+        st.then = null;
+        then?.();
+      }
+    } else st.tick?.(st, dt);
+  }
+}
 
 // ================= Bãi biển: người đi dạo và chơi =================
 // Bãi cát từ z ≈ 14 tới mép nước SEA_Z. Người chơi đi dạo xuống được qua bậc thang trước quán.
@@ -2607,7 +3019,8 @@ for (let i = 0; i < 5; i++) {
 
 // ================= Cài đặt (lưu trong trình duyệt) =================
 const settings = {
-  music: 50, ambience: 70, sfx: 80, karaoke: 80, // âm lượng 0–100
+  music: 20, ambience: 70, sfx: 80, karaoke: 80, // âm lượng 0–100
+  musicPicked: false, // người chơi đã tự chỉnh âm lượng nhạc nền chưa
   bgPlay: false, // phát tiếp khi chuyển tab
   quality: 'high', // điện thoại cũng mặc định Đẹp; ai cần pin thì tự chọn Tiết kiệm pin
   qualityPicked: false, // người chơi đã tự chọn chất lượng đồ hoạ chưa
@@ -2617,6 +3030,8 @@ try {
   const saved = JSON.parse(localStorage.getItem('nhau-settings')) || {};
   // Bản cũ lưu sẵn 'low' cho điện thoại dù người chơi chưa chọn: bỏ đi để dùng mặc định mới.
   if (!saved.qualityPicked) delete saved.quality;
+  // Bản cũ lưu sẵn nhạc nền 50: ai chưa tự chỉnh thì dùng mặc định mới.
+  if (!saved.musicPicked) delete saved.music;
   Object.assign(settings, saved);
 } catch {}
 const saveSettings = () => { try { localStorage.setItem('nhau-settings', JSON.stringify(settings)); } catch {} };
@@ -2711,7 +3126,27 @@ function scheduleBgm() {
     BGM.step++;
   }
 }
+// Nhạc nền chính: beat "Ông Trời Làm Tội Anh Chưa" (đã mua bản quyền). Bản gốc dài 2 tiếng 44 phút là một
+// vòng beat 338,2132 giây lặp lại, nên chỉ lưu một vòng (5,6 MB) và tự lặp: file có 0,5 giây đệm đầu và 3 giây
+// đuôi; chạy tới hết vòng thì lùi đúng một vòng (hai chỗ nghe giống hệt nhau nên không thấy chỗ nối).
+// Phát qua thẻ <audio> (nhẹ bộ nhớ hơn giải mã cả bài) nối vào kênh nhạc nền, nên to nhỏ, tắt khi có người hát
+// và nút tắt tiếng vẫn như cũ. Không tải được file thì quay về nhạc tự chơi bằng Web Audio ở dưới.
+const BGM_FILE = { src: '/music/ong-troi-lam-toi-anh-chua-beat.m4a', start: 0.5, loop: 338.2132 };
+let bgmEl = null;
 function startBgm() {
+  if (bgmEl || BGM.on) return;
+  const a = ac();
+  bgmEl = new Audio(BGM_FILE.src);
+  bgmEl.preload = 'auto';
+  bgmEl.currentTime = BGM_FILE.start;
+  a.createMediaElementSource(bgmEl).connect(buses.music);
+  bgmEl.addEventListener('error', () => { bgmEl = null; startBgmSynth(); }, { once: true });
+  bgmEl.play().catch(() => {}); // điện thoại chặn tự phát thì lần chạm sau bật lại (xem dưới)
+  setInterval(() => {
+    if (bgmEl && bgmEl.currentTime >= BGM_FILE.start + BGM_FILE.loop) bgmEl.currentTime -= BGM_FILE.loop;
+  }, 100);
+}
+function startBgmSynth() {
   if (BGM.on) return;
   ac();
   BGM.on = true;
@@ -2731,6 +3166,8 @@ document.addEventListener('visibilitychange', () => {
 // còn dừng ("suspended" / iOS "interrupted") thì lần chạm kế tiếp bật lại.
 for (const ev of ['pointerdown', 'touchend', 'keydown']) {
   addEventListener(ev, () => {
+    // Điện thoại chặn tự phát: lần chạm đầu tiên bật nhạc nền
+    if (bgmEl?.paused && !(document.hidden && !settings.bgPlay)) bgmEl.play().catch(() => {});
     if (audio && audio.state !== 'running' && !(document.hidden && !settings.bgPlay)) audio.resume();
   }, { passive: true });
 }
@@ -3304,7 +3741,7 @@ function connect() {
   }
   catch { goOffline(); return; }
   net.ws = ws;
-  ws.onopen = () => ws.send(JSON.stringify({ t: 'hello', name: state.name, look: state.look, key: joinKey }));
+  ws.onopen = () => ws.send(JSON.stringify({ t: 'hello', name: state.name, look: state.look, key: joinKey, pid: playerPid }));
   ws.onmessage = (e) => {
     let m;
     try { m = JSON.parse(e.data); } catch { return; }
@@ -3318,6 +3755,7 @@ function connect() {
     toast('Mất kết nối, đang nối lại…');
     for (const id of [...remotes.keys()]) removeRemote(id);
     if (meA.seat) unseatActor(meA);
+    updateBillButton();
     setTimeout(connect, 2000);
   };
 }
@@ -3359,6 +3797,13 @@ function localServer(m) {
       if (!meA.seat) break;
       reply({ t: 'dish', table: meA.seat.table, item: m.item, by: myId });
       localTab(meA.seat.table).items.push(m.item);
+      reply({ t: 'tab', table: meA.seat.table, ...tabs[meA.seat.table] });
+      break;
+    case 'pour-round':
+      if (!meA.seat) break;
+      if (state.fill >= 0.5) { reply({ t: 'notice', msg: 'Ly còn đầy kìa, dzô đi! 🍻' }); break; }
+      localTab(meA.seat.table).pours++;
+      reply({ t: 'pour-round', table: meA.seat.table, by: myId, ids: [myId] });
       reply({ t: 'tab', table: meA.seat.table, ...tabs[meA.seat.table] });
       break;
     case 'refill':
@@ -3453,10 +3898,18 @@ function onMessage(m) {
       m.dishes.forEach((items, table) => items.forEach((item) => serveDish(table, item, true)));
       features = m.features || features;
       setMic(m.mic);
-      placeAt(meA, Math.random() * 2 - 1, 2.6, Math.PI, 0);
+      placeAt(meA, spawnSpot().x, SPAWN.z, SPAWN.yaw, 0);
       roomState.clear();
       (m.rooms || []).forEach((rm) => onMessage(rm));
       (m.tabs || []).forEach((tb) => onMessage(tb));
+      if (m.wallet) onMessage({ t: 'wallet', ...m.wallet });
+      holds.forEach((_, t) => setHold(t, 0));
+      (m.holds || []).forEach((h) => setHold(h.table, h.until));
+      if (m.wallet?.debt > 0) setTimeout(() => {
+        speak(owner, `📒 Lần trước em còn nợ ${fmt(m.wallet.debt)} đó nha!`, 4000);
+        toast(`📒 Bạn còn nợ quán ${fmt(m.wallet.debt)}. Ra quầy thu ngân trả nợ rồi mới gọi món được.`);
+      }, 1500);
+      setBeach(m.beach || []);
       $('chat-log-all').innerHTML = '';
       for (const c of m.chatAll || []) addChatLine(c.name, c.text, 'all');
       setChatScope('all');
@@ -3498,7 +3951,15 @@ function onMessage(m) {
       updatePeople();
       break;
     }
+    case 'hold':
+      setHold(m.table, m.until);
+      break;
+    case 'debt-paid':
+      speak(owner, m.left ? `Em trả ${fmt(m.paid)}, còn nợ ${fmt(m.left)} nha!` : 'Hết nợ rồi, nhậu tiếp đi em! 🍻', 3000);
+      toast(m.left ? `📒 Đã trả ${fmt(m.paid)}, còn nợ ${fmt(m.left)}` : `📒 Đã trả hết nợ ${fmt(m.paid)}`);
+      break;
     case 'sit-fail':
+      if (m.held) { toast(`🪧 ${tableName(TABLES[m.table])} đang giữ chỗ cho nhóm vừa ra ngoài, chọn bàn khác nhé!`); break; }
       toast(m.locked ? `🔒 ${tableName(TABLES[m.table])} đã khoá, gõ cửa cũng không ai mở đâu!` : `${tableName(TABLES[m.table])} hết ghế rồi, thử bàn khác nhé!`);
       break;
     case 'room': {
@@ -3535,16 +3996,16 @@ function onMessage(m) {
     case 'dish': {
       const T = TABLES[m.table], dish = MENU[m.item];
       if (T.floor === 0) {
-        serveDish(m.table, m.item);
+        deliverDish(m.table, m.item);
         speak(chef, `🔥 ${dish.name} có ngay!`, 2500);
       } else {
         // Món lên tầng trên đi bằng thang tời: đèn thang tời tầng đó sáng, kêu "ding", rồi món ra bàn.
         speak(chef, `🔥 ${dish.name} · gửi thang tời lên ${FLOOR_NAMES[T.floor]}`, 2800);
         dumbwaiterLamps[T.floor].userData.until = performance.now() + 2600;
         setTimeout(() => {
-          serveDish(m.table, m.item);
+          deliverDish(m.table, m.item); // em ở tầng đó lấy món từ thang tời bưng ra bàn
           if (meA.f === T.floor && Math.hypot(meA.rx - DUMBWAITER.x, meA.rz - DUMBWAITER.z) < 12) dingSound();
-          if (T.floor === 1) speak(waiter, `Món ${dish.name} lên rồi ạ!`, 2500);
+          if (T.floor === 1) speak(waiter, `Món ${dish.name} lên rồi, em mang vào liền ạ!`, 2500);
         }, 1500);
       }
       if (meA.f === 0 && Math.hypot(meA.rx - chef.rx, meA.rz - chef.rz) < 9) noiseHit(1.2, 3000, 0.08, 'highpass');
@@ -3553,15 +4014,17 @@ function onMessage(m) {
     }
     case 'dishes':
       TABLES[m.table].dishes.clear();
+      for (const d of deliveries) if (d.table === m.table && !d.done) { d.done = true; clearTimeout(d.timer); } // bàn đã dọn thì thôi bưng
       break;
     case 'tab':
       tabs[m.table] = { items: m.items || [], pours: m.pours || 0, paidBy: m.paidBy ?? null, paidName: m.paidName ?? null };
       if (modal === 'bill' && meA?.seat?.table === m.table) showBill();
+      if (meA?.seat?.table === m.table) updateBillButton();
       break;
     case 'paid': {
       if (m.by === myId) {
         state.paid += m.total;
-        toast(`💸 Bạn đã thanh toán ${fmt(m.total)} cho cả bàn. Hào phóng quá!`);
+        startPayTrip(m.total);
       } else if (meA?.seat?.table === m.table) {
         toast(`💸 ${m.name} đã thanh toán ${fmt(m.total)} cho cả bàn`);
         speak(actorById(m.by), '💸 Để tôi trả!', 2500);
@@ -3609,7 +4072,46 @@ function onMessage(m) {
     }
     case 'notice':
       toast(m.msg);
+      fishRefused(m.msg);
       if (modal === 'songs') $('btn-yt-search').disabled = false;
+      break;
+    case 'wallet':
+      wallet = { money: m.money, bag: m.bag || [], debt: m.debt || 0 };
+      renderWallet();
+      break;
+    case 'broke':
+      toast(m.msg);
+      walletChip.classList.add('broke');
+      break;
+    case 'beach':
+      setBeach(m.items || []);
+      break;
+    case 'catch':
+      if (modal === 'fish' && !catchFx) playCatch(m.k, () => showCatch(m.k));
+      break;
+    case 'picked': {
+      const it = ITEMS[m.k];
+      if (it) { toast(`${it.icon} Nhặt được ${it.name}! Mở 🎒 giỏ để ${it.bottle ? 'mở chai hoặc bán' : 'bán lấy tiền'}`); speak(meA, `${it.icon} nhặt được!`, 1800); }
+      break;
+    }
+    case 'sold':
+      if (m.gain) {
+        toast(m.toDebt ? `💰 Bà Tư trả ${fmt(m.gain)}, trừ nợ quán ${fmt(m.toDebt)}` : `💰 Bà Tư trả ${fmt(m.gain)}`);
+        speak(trader, pick(LINES.traderPaid), 2500);
+      }
+      break;
+    case 'bottle':
+      $('bottle-text').textContent = m.text;
+      $('bottle-from').textContent = m.from ? `— ${m.from} thả lại biển —` : '— không ký tên —';
+      openModal('bottle');
+      break;
+    case 'vendor-ok':
+      speak(vendor, 'Cảm ơn con nhé!');
+      state.extras.push(MENU[0]);
+      speak(meA, '🥜 nhai lạc', 2000);
+      break;
+    case 'pour-round':
+      pourRound(m);
       break;
     case 'yt-results':
       renderYouTube(m);
@@ -3691,7 +4193,6 @@ function setMic(m) {
     speak(meA, '🙇 Cảm ơn mọi người!', 2500);
   }
   applyVolumes(); // có người hát thì tắt nhạc nền
-  if (!mic.singer) for (const a of allActors()) a.dancing = false;
   renderMicBar();
   updatePeople();
 }
@@ -3732,7 +4233,7 @@ function toast(msg) {
   t._h = setTimeout(() => t.classList.remove('show'), 2800);
 }
 
-const OVERLAYS = { donate: 'overlay-donate', start: 'overlay-start', menu: 'overlay-menu', songs: 'overlay-songs', settings: 'overlay-settings', elevator: 'overlay-elevator', poem: 'overlay-poem', bill: 'overlay-bill', end: 'overlay-end', leave: 'overlay-leave', pick: 'overlay-pick' };
+const OVERLAYS = { donate: 'overlay-donate', start: 'overlay-start', menu: 'overlay-menu', songs: 'overlay-songs', settings: 'overlay-settings', elevator: 'overlay-elevator', poem: 'overlay-poem', bill: 'overlay-bill', end: 'overlay-end', leave: 'overlay-leave', pick: 'overlay-pick', fish: 'overlay-fish', bag: 'overlay-bag', bottle: 'overlay-bottle' };
 function openModal(name) {
   modal = name;
   for (const [k, id] of Object.entries(OVERLAYS)) $(id).classList.toggle('hidden', k !== name);
@@ -3802,6 +4303,7 @@ function renderMenu() {
     b.className = 'menu-item';
     b.innerHTML = `<b>${m.icon} ${m.name}</b><small>${fmt(m.price)}</small>`;
     b.onclick = () => {
+      if (!canAfford(m.price)) return;
       send({ t: 'order', item: i });
       toast(`Đã gọi ${m.icon} ${m.name}`);
     };
@@ -3811,10 +4313,11 @@ function renderMenu() {
 
 // ================= Hành động của mình =================
 // Nhảy theo nhạc karaoke: chỉ khi có người đang hát và mình đứng ở tầng có sân khấu.
-const canDance = () => !!mic.singer && mic.singer !== myId && !!meA && !meA.seat && meA.f === STAGE.floor && state.started;
+// Nhảy được ở bất cứ đâu khi đang đứng (người đang cầm mic thì đang hát, không nhảy).
+const canDance = () => !!meA && !meA.seat && mic.singer !== myId && state.started;
 function toggleDance(on = !meA?.dancing) {
   if (!meA || modal || state.passedOut) return;
-  if (on && !canDance()) return toast(mic.singer ? 'Lên sân thượng đứng gần sân khấu rồi nhảy nhé!' : 'Chưa ai hát, nhảy gì đây 😆');
+  if (on && !canDance()) return toast(meA.seat ? 'Đứng dậy rồi mới nhảy được nhé!' : 'Đang cầm mic thì hát đã, nhảy sau 😆');
   if (!!meA.dancing === on) return;
   meA.dancing = on;
   sendAct(on ? 'dance' : 'dance-stop');
@@ -3824,6 +4327,9 @@ function toggleDance(on = !meA?.dancing) {
 let chatTable = -1; // bàn đang có tin nhắn trong khung chat
 function onSitMine() {
   if (meA.dancing) toggleDance(false);
+  if (paying) setPaying(false); // đang đi thanh toán mà bấm E ngồi lại bàn thì thôi
+  pourPending = false;
+  updateBillButton();
   moveTarget = pending = null;
   state.fill = 0;
   setFill(0);
@@ -3929,8 +4435,81 @@ function onStandMine(T) {
   const dx = meA.x - T.x, dz = meA.z - T.z, d = Math.hypot(dx, dz) || 1;
   placeAt(meA, T.x + (dx / d) * 1.75, T.z + (dz / d) * 1.75);
   busy = null;
+  updateBillButton();
   renderLockButton();
   setChatScope('all');
+  if (payTrip) payTripWalk();
+}
+
+// Nút 💸 chỉ hiện khi đang ngồi ở bàn đã gọi mồi mà chưa ai trả (kể cả mồi do người khác trong bàn gọi).
+function billPayable() {
+  const tab = meA?.seat ? tabs[meA.seat.table] : null;
+  return !!(tab?.items.length && !tab.paidBy);
+}
+function updateBillButton() {
+  $('btn-bill').classList.toggle('hidden', !billPayable());
+}
+
+// Thanh toán xong: đứng dậy, tự đi tới quầy thu ngân (ở tầng trên thì đi thang máy xuống),
+// chị chủ thu tiền cảm ơn, rồi tự đi ra khỏi quán. Trong lúc đó (paying) không đổi được hướng đi
+// (bấm chỗ khác, phím di chuyển); các thao tác khác vẫn dùng bình thường.
+const CASHIER_SPOT = { x: 4.8, z: -1.7 };
+// Chỗ đứng lúc mới vào game (vỉa hè trước quán, quay mặt vào quán); trả tiền xong ra đứng lại đây.
+const SPAWN = { z: 2.6, yaw: Math.PI };
+const spawnSpot = () => ({ x: Math.random() * 2 - 1, z: SPAWN.z });
+let payTrip = null; // { total }
+let paying = false, payingTimer = null, payPause = false; // payPause: đang đứng trả tiền ở quầy
+function setPaying(on) {
+  paying = on;
+  clearTimeout(payingTimer);
+  // Phòng khi kẹt đường không tới được nơi: quá 90 giây thì trả lại quyền điều khiển.
+  if (on) payingTimer = setTimeout(() => setPaying(false), 90000);
+}
+function startPayTrip(total) {
+  if (modal === 'bill') closeModal();
+  if (state.passedOut) return toast(`💸 Bạn đã thanh toán ${fmt(total)} cho cả bàn.`);
+  payTrip = { total };
+  setPaying(true);
+  if (meA.seat) send({ t: 'stand' }); // đứng dậy xong (onStandMine) mới đi
+  else payTripWalk();
+}
+function walkThen(spot, range, action) {
+  pending = { pos: () => spot, range, action };
+  walkTo(spot.x, spot.z);
+}
+function payTripWalk() {
+  const trip = payTrip;
+  payTrip = null;
+  if (!trip) return;
+  if (meA.f !== 0) {
+    toast('💸 Xuống quầy thu ngân thanh toán…');
+    walkThen({ x: ELEVATOR.x, z: ELEVATOR.doorZ + 0.7 }, 0.8, async () => {
+      await rideElevator(0);
+      payTrip = trip;
+      payTripWalk();
+    });
+    return;
+  }
+  toast('💸 Ra quầy thu ngân thanh toán…');
+  walkThen(CASHIER_SPOT, 0.5, () => {
+    payPause = true;
+    meA.yaw = Math.PI; // quay vào quầy
+    speak(meA, '💸 Tính tiền em ơi!', 1800);
+    setTimeout(() => {
+      dingSound();
+      speak(owner, `Của em ${fmt(trip.total)}, cảm ơn em nha! 🙏`, 3000);
+      toast(`💸 Bạn đã thanh toán ${fmt(trip.total)} cho cả bàn. Hào phóng quá!`);
+    }, 900);
+    setTimeout(() => {
+      payPause = false;
+      if (!paying) return;
+      walkThen(spawnSpot(), 0.25, () => {
+        meA.yaw = SPAWN.yaw;
+        setPaying(false);
+        toast('👋 Thanh toán xong rồi, về nhà an toàn nhé!');
+      });
+    }, 2600);
+  });
 }
 
 // ---------- Đổi tầng, nhà vệ sinh, phòng riêng ----------
@@ -4108,8 +4687,47 @@ function interact() {
 let afterStand = null;
 function askStand(then = null) {
   afterStand = then;
-  $('leave-msg').textContent = `Đứng dậy khỏi ${tableName(TABLES[meA.seat.table])} thì sẽ không thấy tin nhắn của bàn nữa.`;
+  const T = TABLES[meA.seat.table], tab = tabs[T.id];
+  // Mình là người cuối cùng của bàn mà bàn chưa trả: nhắc thanh toán, hoặc đi một lát (quán giữ chỗ).
+  const last = !allActors().some((a) => !isMe(a) && a.seat?.table === T.id);
+  const unpaid = net.online && last && !tab.paidBy && tabTotal(T, tab) > 0;
+  $('leave-msg').textContent = unpaid
+    ? `${tableName(T)} còn ${fmt(tabTotal(T, tab))} chưa thanh toán. Đi một lát thì quán giữ chỗ 3 phút; quá giờ chưa ai trả thì ai gọi món nấy tự trả (ví không đủ thì ghi sổ nợ).`
+    : `Đứng dậy khỏi ${tableName(T)} thì sẽ không thấy tin nhắn của bàn nữa.`;
+  $('btn-leave-go').textContent = unpaid ? '🚶 Đi một lát' : 'Rời bàn';
+  $('btn-leave-pay').classList.toggle('hidden', !unpaid);
   openModal('leave');
+}
+$('btn-leave-pay').onclick = () => {
+  closeModal();
+  afterStand = null;
+  send({ t: 'pay' }); // trả xong (paid) thì tự ra quầy rồi đi về, xem startPayTrip
+};
+
+// Bàn trống còn nợ đang được giữ chỗ: biển "Đang giữ chỗ" trên bàn.
+const holds = new Map(); // id bàn -> { until, sign }
+function setHold(table, until) {
+  const old = holds.get(table);
+  if (old) { old.sign.parent?.remove(old.sign); holds.delete(table); }
+  if (!until) return;
+  const T = TABLES[table];
+  const tex = canvasTexture(512, 112, (g, w, h) => {
+    g.fillStyle = '#ffecb3';
+    g.fillRect(0, 0, w, h);
+    g.strokeStyle = '#8d6e63';
+    g.lineWidth = 8;
+    g.strokeRect(4, 4, w - 8, h - 8);
+    g.fillStyle = '#4e342e';
+    g.font = 'bold 54px sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('🪧 Đang giữ chỗ', w / 2, h / 2 + 2);
+  });
+  const sign = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex }));
+  sign.scale.set(1.3, 0.28, 1);
+  sign.position.set(T.x, 1.25, T.z);
+  floors[T.floor].add(sign);
+  holds.set(table, { until, sign });
 }
 function confirmStand(go) {
   closeModal();
@@ -4126,22 +4744,20 @@ function sendAct(k, extra) {
   send({ t: 'act', k, ...extra });
 }
 
+// Rót: gọi em rót bia của tầng tới rót cho những ai trong bàn đang có ly rỗng.
 function pour() {
   if (modal || state.passedOut) return;
   if (!meA.seat) return toast('Ngồi vào bàn đã rồi rót nhé (click vào bàn)');
   if (busy) return;
-  if (state.fill > 0.5) return toast('Ly còn đầy kìa, dzô đi! (1)');
-  pourSound(); // lượt rót được server ghi vào hoá đơn bàn
-  playAct(meA, 'pour');
-  sendAct('pour');
-  busy = { t: 0, dur: 0.9, tick: (k) => setFill(k * 0.95) };
+  if (beerGirls[meA.f].jobs.some((j) => j.table === meA.seat.table)) return toast('Em rót bia đang tới rồi, chờ xíu nhé 🍺');
+  send({ t: 'pour-round' });
 }
 
 function cheers() {
   if (modal || state.passedOut) return;
   if (!meA.seat) return toast('Phải ngồi vào bàn mới dzô được!');
   if (busy) return;
-  refill();
+  if (!refill()) return;
   sendAct('cheers');
   onAnyAct(meA, 'cheers');
   dzoCount(meA);
@@ -4163,16 +4779,408 @@ function tableCheers(by) {
 }
 function joinCheers() {
   if (state.passedOut || busy) return;
-  refill();
+  if (!refill()) { playAct(meA, 'cheers'); return; } // hết tiền rót thì nâng ly không
   drinkUp();
 }
 // Ly rỗng thì tự rót đầy trước khi dzô (server tính vào hoá đơn bàn).
 function refill() {
-  if (state.fill >= 0.5) return;
+  if (state.fill >= 0.5) return true;
+  if (pourPending) { fillMine(); return true; } // em rót bia đang tới, ly này đã tính tiền rồi
+  if (!canAfford(drinkOf(meA.seat.table).price)) return false;
   setFill(0.95);
   send({ t: 'refill' });
   pourSound();
+  return true;
 }
+
+// ================= Ví tiền, câu cá, nhặt đồ trên bãi =================
+let wallet = { money: START_MONEY, bag: [] };
+const walletChip = $('btn-wallet');
+function renderWallet() {
+  $('money').textContent = fmt(wallet.money);
+  $('bag-count').textContent = wallet.bag.length;
+  $('debt-chip').classList.toggle('hidden', !wallet.debt);
+  $('debt').textContent = fmt(wallet.debt || 0);
+  walletChip.classList.toggle('broke', wallet.money < 20000 || wallet.debt > 0);
+  if (modal === 'bag') renderBag();
+}
+// Kiểm tra trước ở máy mình (server vẫn kiểm tra lại): ví phải đủ trả hoá đơn bàn đang nợ cộng món mới.
+function canAfford(extra) {
+  if (net.online && wallet.debt > 0) { toast(`📒 Còn nợ quán ${fmt(wallet.debt)}, ra quầy thu ngân trả nợ rồi gọi tiếp nhé!`); return false; }
+  if (!net.online || !meA?.seat) return true;
+  const T = TABLES[meA.seat.table], tab = tabs[T.id];
+  const need = (tab.paidBy ? 0 : tabTotal(T, tab)) + extra;
+  if (wallet.money >= need) return true;
+  toast(`💸 Ví còn ${fmt(wallet.money)}, chưa đủ ${fmt(need)} (gồm cả hoá đơn bàn). Ra biển câu cá, nhặt ốc kiếm thêm nhé!`);
+  return false;
+}
+walletChip.onclick = () => !modal && openBag();
+
+function openBag() {
+  renderBag();
+  openModal('bag');
+}
+function renderBag() {
+  $('bag-money').textContent = fmt(wallet.money);
+  const canSell = !net.online || (meA && nearTrader(meA));
+  $('btn-sell-all').disabled = !canSell || !wallet.bag.length;
+  $('bag-hint').textContent = canSell
+    ? '🧺 Bà Tư thu mua hết: cá, cua, ốc, vỏ sò, chai. Cá hiếm được giá cao.'
+    : '🧺 Muốn bán thì mang ra sạp Bà Tư (chân bậc xuống biển).';
+  const list = $('bag-list');
+  list.innerHTML = '';
+  const counts = {};
+  for (const k of wallet.bag) counts[k] = (counts[k] || 0) + 1;
+  const kinds = Object.keys(counts).sort((a, b) => (ITEMS[b]?.price || 0) - (ITEMS[a]?.price || 0));
+  if (!kinds.length) list.innerHTML = '<p class="small">Giỏ trống trơn. Ra bãi biển nhặt đồ hoặc câu cá nhé!</p>';
+  for (const k of kinds) {
+    const it = ITEMS[k];
+    if (!it) continue;
+    const row = document.createElement('div');
+    row.className = 'bag-row';
+    row.innerHTML = `<span class="ico">${it.icon}</span><span class="info"><b>${it.name} ×${counts[k]}</b><small>${it.junk ? 'Đồ bỏ đi' : `Bán ${fmt(it.price)}/con`}${it.rare ? ' · cá hiếm' : ''}</small></span>`;
+    const btn = (text, fn, disabled) => {
+      const b = document.createElement('button');
+      b.textContent = text;
+      b.disabled = !!disabled;
+      b.onclick = fn;
+      row.appendChild(b);
+    };
+    if (it.bottle) btn('📜 Mở chai', () => send({ t: 'open-bottle' }));
+    btn(it.junk ? '🗑️ Bỏ' : it.rare ? `💰 Bán ${fmt(it.price)}` : '💰 Bán', () => send({ t: 'sell', k }), !canSell);
+    list.appendChild(row);
+  }
+}
+$('btn-sell-all').onclick = () => send({ t: 'sell', all: true });
+$('btn-bag-close').onclick = closeModal;
+
+// Lời nhắn trong chai
+$('btn-bottle-send').onclick = () => {
+  const text = $('bottle-reply').value.trim();
+  if (!text) return $('bottle-reply').focus();
+  send({ t: 'write-note', text });
+  $('bottle-reply').value = '';
+  closeModal();
+};
+$('btn-bottle-close').onclick = closeModal;
+
+// Đồ trôi dạt trên bãi: server rải vài phút một lần, ai đến trước nhặt trước.
+const beachItems = new Map(); // id -> { it, group, hit }
+function setBeach(list) {
+  const keep = new Set(list.map((x) => x.id));
+  for (const [id, b] of beachItems) if (!keep.has(id)) {
+    unclickable(b.hit);
+    F1.remove(b.group);
+    beachItems.delete(id);
+  }
+  for (const it of list) {
+    if (beachItems.has(it.id) || !ITEMS[it.k]) continue;
+    const group = new THREE.Group();
+    group.position.set(it.x, 0, it.z);
+    const sprite = emojiSprite(ITEMS[it.k].icon, 0.55);
+    sprite.position.y = 0.35;
+    group.add(sprite);
+    const shadow = add(new THREE.CircleGeometry(0.22, 16), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.18 }), 0, 0.02, 0, group);
+    shadow.rotation.x = -Math.PI / 2;
+    const hit = clickable(add(new THREE.CylinderGeometry(0.45, 0.45, 0.9, 8), HIT_MAT, 0, 0.45, 0, group), {
+      f: 0,
+      pos: () => it,
+      range: 1.6,
+      label: () => `nhặt ${ITEMS[it.k].icon} <b>${ITEMS[it.k].name}</b>`,
+      action: () => send({ t: 'pickup', id: it.id }),
+    });
+    F1.add(group);
+    beachItems.set(it.id, { it, group, sprite, hit, phase: Math.random() * 6 });
+  }
+}
+function updateBeachItems(t) {
+  for (const b of beachItems.values()) b.sprite.position.y = 0.35 + Math.sin(t * 2 + b.phase) * 0.06;
+}
+
+// Câu cá: chờ cá cắn câu, rồi vạch chạy qua lại; giật đúng lúc vạch nằm trong vùng xanh thì kéo được cá to.
+const canFish = () => !!meA && state.started && !meA.seat && meA.f === 0 && meA.rz >= FISH_ZONE_Z - 0.5 && !state.passedOut;
+const fishGame = { phase: 'idle', t: 0, pos: 0, dir: 1, speed: 1, zone: 0.4, width: 0.18, timer: 0, lastCast: 0 };
+function startFishing() {
+  if (!canFish()) return toast('Ra sát mép nước rồi mới câu được nhé 🌊');
+  if (!net.online) return toast('Cần kết nối với quán mới câu cá được');
+  openModal('fish');
+  $('hud').classList.add('fishing');
+  moveTarget = pending = null;
+  meA.yaw = 0; // quay mặt ra biển
+  // Góc máy mở đầu: chéo sau lưng bên trái, nhìn ra phao (người chơi xoay tiếp tuỳ ý)
+  fishGame.camBefore = { ...cam };
+  Object.assign(cam, { yaw: Math.PI + 0.5, pitch: 0.42, dist: 5.2 });
+  meA.fixedArms = -1.4;
+  speak(meA, '🎣 thả câu…', 2000);
+  castLine();
+}
+// Thời gian chờ cá cắn: lúc nhanh lúc chậm như câu thật (đôi khi vừa thả đã dính, đôi khi đợi cả chục giây).
+function biteDelay() {
+  const r = Math.random();
+  return r < 0.2 ? 0.8 + Math.random() * 1.5 : r < 0.75 ? 2.5 + Math.random() * 3.5 : 6 + Math.random() * 6;
+}
+function castLine() {
+  clearTimeout(fishGame.recast);
+  const cooldown = Math.max(0, 4000 - (Date.now() - fishGame.lastCast)) / 1000; // server cho mỗi 4 giây một lần
+  // Mỗi lần thả cần là một khoảng giật mới: vị trí và độ rộng vùng xanh ngẫu nhiên (hẹp thì khó hơn).
+  const width = 0.1 + Math.random() * 0.14;
+  Object.assign(fishGame, { phase: 'wait', t: 0, pos: 0, width, zone: 0.05 + Math.random() * (0.9 - width), biteAt: performance.now() + Math.max(cooldown, biteDelay()) * 1000 });
+  $('fish-zone').style.left = `${fishGame.zone * 100}%`;
+  $('fish-zone').style.width = `${width * 100}%`;
+  $('fish-bar').classList.add('idle');
+  $('fish-status').textContent = '🌊 Thả cần… chờ cá cắn câu';
+}
+function updateFishGame(dt) {
+  if (modal !== 'fish') return;
+  const g = fishGame;
+  // Đếm theo đồng hồ thật (máy yếu ít khung hình vẫn đúng giờ)
+  if (g.phase === 'wait' && performance.now() >= g.biteAt) {
+    Object.assign(g, { phase: 'bite', t: 0, pos: Math.random(), dir: Math.random() < 0.5 ? 1 : -1, speed: 0.7 + Math.random() * 0.8 });
+    $('fish-bar').classList.remove('idle');
+    $('fish-status').textContent = '❗ Cá cắn câu! Giật cần đi!';
+    dingSound();
+  }
+  if (g.phase === 'bite') {
+    g.t += dt;
+    g.pos += g.dir * g.speed * dt;
+    if (g.pos > 1) { g.pos = 1; g.dir = -1; }
+    if (g.pos < 0) { g.pos = 0; g.dir = 1; }
+    if (g.t > 5) strikeFish(); // để lâu quá cá ăn mồi rồi bỏ đi
+  }
+  $('fish-mark').style.left = `${g.pos * 100}%`;
+}
+function strikeFish() {
+  const g = fishGame;
+  if (g.phase === 'wait') {
+    $('fish-status').textContent = '😅 Giật sớm quá, cá chưa cắn! Chờ chút…';
+    g.biteAt += 1000;
+    return;
+  }
+  if (g.phase !== 'bite') return;
+  // Trong vùng xanh: 0.7–1 (giữa vùng là chuẩn nhất); lệch ra ngoài thì giảm nhanh.
+  const half = g.width / 2, d = Math.abs(g.pos - (g.zone + half));
+  const power = g.t > 5 ? 0 : d <= half ? 1 - (0.3 * d) / half : Math.max(0, 0.7 - (d - half) * 3);
+  g.phase = 'pull';
+  g.lastCast = Date.now();
+  send({ t: 'fish', power: +power.toFixed(2) });
+  $('fish-status').textContent = power >= 0.7 ? '💪 Chuẩn! Đang kéo lên…' : '🎣 Đang kéo…';
+}
+// Câu xong một con: hiện tên và mô tả, rồi tự thả cần lại (không cần bấm), tới khi bấm Nghỉ câu.
+function showCatch(k) {
+  if (modal !== 'fish') return;
+  fishGame.phase = 'done';
+  const it = k && ITEMS[k];
+  $('fish-status').textContent = it ? `${it.rare ? '🎉 ' : ''}${it.icon} ${it.name}${it.junk ? '' : ` · ${fmt(it.price)}`}` : '💦 Sổng mất rồi!';
+  $('fish-result').textContent = it ? it.desc : 'Lần sau giật đúng lúc vạch nằm trong vùng xanh nhé.';
+  if (it) speak(meA, `${it.icon} ${it.junk ? 'vớt được dép 😂' : it.name + '!'}`, 2500);
+  fishGame.recast = setTimeout(() => { if (modal === 'fish' && canFish()) castLine(); }, 1800);
+}
+// Server từ chối (giỏ đầy, đứng xa nước…) thì dừng lại cho người chơi xử lý.
+function fishRefused(msg) {
+  if (modal !== 'fish' || fishGame.phase !== 'pull') return;
+  fishGame.phase = 'done';
+  $('fish-status').textContent = '✋ Tạm dừng câu';
+  $('fish-result').textContent = msg;
+}
+function stopFishing() {
+  clearTimeout(fishGame.recast);
+  endCatch();
+  if (fishGame.camBefore) { Object.assign(cam, fishGame.camBefore); fishGame.camBefore = null; }
+  $('hud').classList.remove('fishing');
+  fishGame.phase = 'idle';
+  if (meA) meA.fixedArms = 0;
+  closeModal();
+}
+// ---------- Cần câu, phao và đoạn phim kéo cá lên ----------
+// Lúc câu: cần trên tay, dây nối xuống phao ngoài nước. Giật cần xong (server báo kết quả) thì chiếu đoạn
+// phim ngắn: cần bật lên, nước bắn tung, con cá bay vòng cung lên treo lủng lẳng đầu dây, camera quay cận.
+const rod = new THREE.Group();
+cyl(0.012, 0.024, 1.8, 0x4e342e, 0, 0.9, 0, rod);
+cyl(0.035, 0.035, 0.06, 0x212121, 0, 0.35, 0.03, rod).rotation.x = Math.PI / 2; // ống cuộn dây
+const fishLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
+  new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 }));
+fishLine.frustumCulled = false;
+const bobber = new THREE.Group();
+ball(0.06, 0xff3d00, 0, 0.03, 0, bobber);
+ball(0.035, 0xffffff, 0, 0.09, 0, bobber);
+scene.add(rod, fishLine, bobber);
+rod.visible = fishLine.visible = bobber.visible = false;
+const ROD_TIP = new THREE.Vector3(0, 1.8, 0);
+const rodTip = new THREE.Vector3(), bobberPos = new THREE.Vector3(), fishPos = new THREE.Vector3();
+// Nước bắn và kim tuyến: một hệ hạt dùng chung
+const SPLASH_N = 90;
+const splash = (() => {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(SPLASH_N * 3).fill(-999), 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(SPLASH_N * 3).fill(1), 3));
+  const pts = new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.12, map: dotTex, vertexColors: true, transparent: true, depthWrite: false, fog: false }));
+  pts.frustumCulled = false;
+  scene.add(pts);
+  return { pts, pos: geo.attributes.position, col: geo.attributes.color, vel: new Float32Array(SPLASH_N * 3), life: new Float32Array(SPLASH_N), i: 0 };
+})();
+function burst(at, n, { speed = 2.5, up = 3, colors = [0xdff6ff, 0xffffff, 0x9be7ff] } = {}) {
+  const c = new THREE.Color();
+  for (let k = 0; k < n; k++) {
+    const i = splash.i = (splash.i + 1) % SPLASH_N, a = Math.random() * Math.PI * 2, r = Math.random() * speed;
+    splash.pos.setXYZ(i, at.x, at.y, at.z);
+    splash.vel.set([Math.cos(a) * r, up * (0.6 + Math.random() * 0.6), Math.sin(a) * r], i * 3);
+    c.setHex(colors[k % colors.length]);
+    splash.col.setXYZ(i, c.r, c.g, c.b);
+    splash.life[i] = 0.7 + Math.random() * 0.6;
+  }
+}
+function updateSplash(dt) {
+  const p = splash.pos.array, v = splash.vel;
+  for (let i = 0; i < SPLASH_N; i++) {
+    if (splash.life[i] <= 0) { p[i * 3 + 1] = -999; continue; }
+    splash.life[i] -= dt;
+    v[i * 3 + 1] -= 9 * dt;
+    p[i * 3] += v[i * 3] * dt;
+    p[i * 3 + 1] += v[i * 3 + 1] * dt;
+    p[i * 3 + 2] += v[i * 3 + 2] * dt;
+  }
+  splash.pos.needsUpdate = splash.col.needsUpdate = true;
+}
+
+let catchFx = null; // { t, dur, it, sprite, banner, manual }
+function playCatch(k, onDone) {
+  const it = k ? ITEMS[k] : null;
+  const sprite = emojiSprite(it ? it.icon : '🐟', 0.6);
+  sprite.visible = false;
+  scene.add(sprite);
+  catchFx = { t: 0, dur: it ? 3.6 : 2, it, sprite, onDone, splashed: false, shown: false };
+  $('overlay-fish').classList.add('cine'); // ẩn hộp câu cá cho thấy cảnh
+  $('hud').classList.add('cine');
+}
+function catchBanner(it) {
+  const b = $('catch-banner');
+  b.className = 'catch-banner' + (it?.rare ? ' rare' : '');
+  b.innerHTML = !it ? '💦 Sổng mất rồi!'
+    : it.junk ? `${it.icon} Vớt được… chiếc dép! 😂`
+    : it.rare ? `🎉 CÁ HIẾM! 🎉<br><span>${it.icon} ${it.name}</span><small>${fmt(it.price)}</small>`
+    : `${it.icon} ${it.name}!<small>${fmt(it.price)}</small>`;
+}
+const easeOut = (x) => 1 - (1 - x) * (1 - x);
+function updateFishing(dt, t) {
+  const on = !!meA && (modal === 'fish' || !!catchFx);
+  rod.visible = fishLine.visible = on;
+  bobber.visible = on && !(catchFx?.it && catchFx.t > 0.35);
+  if (!catchFx?.manual) updateSplash(dt);
+  if (!on) return;
+  // Cần cầm tay phải, chĩa ra biển (nhân vật quay mặt về +z khi câu)
+  const fx = catchFx;
+  if (fx && !fx.manual) fx.t += dt;
+  const ft = fx?.t ?? 0;
+  let tilt = 1.05 + Math.sin(t * 1.3) * 0.03;
+  if (fishGame.phase === 'bite') tilt += Math.sin(t * 25) * 0.04; // cá rỉa mồi, đầu cần rung
+  if (fx) tilt = ft < 0.35 ? 1.05 - easeOut(ft / 0.35) * 0.95 : 0.1 + Math.sin(ft * 9) * 0.06 * Math.max(0, 1 - (ft - 0.35));
+  rod.position.set(meA.rx + 0.24, meA.f * FLOOR_H + 0.62, meA.rz + 0.12);
+  rod.rotation.set(tilt, 0, -0.08);
+  rod.updateMatrixWorld();
+  rodTip.copy(ROD_TIP).applyMatrix4(rod.matrixWorld);
+  bobberPos.set(meA.rx + 0.4, -0.02 + Math.sin(t * 2.2) * 0.03 - (fishGame.phase === 'bite' ? Math.abs(Math.sin(t * 9)) * 0.08 : 0), Math.max(meA.rz + 3.4, SEA_Z + 1));
+  bobber.position.copy(bobberPos);
+  let end = bobberPos;
+  if (fx) {
+    const s = fx.sprite;
+    if (!fx.splashed && ft > 0.05) {
+      fx.splashed = true;
+      burst(bobberPos, 40, { speed: 1.6, up: 3.2 });
+    }
+    if (fx.it) {
+      // 0.35–1.5s: cá bay vòng cung từ phao lên đầu dây; sau đó treo lủng lẳng, xoay qua lại
+      const hang = tmp.copy(rodTip).add(new THREE.Vector3(0, -0.55, 0));
+      if (ft > 0.35) {
+        s.visible = true;
+        const k = Math.min(1, (ft - 0.35) / 1.15), e = easeOut(k);
+        fishPos.lerpVectors(bobberPos, hang, e);
+        fishPos.y += Math.sin(k * Math.PI) * 1.6;
+        if (k >= 1) {
+          const sw = ft - 1.5;
+          fishPos.x += Math.sin(sw * 5) * 0.18 * Math.exp(-sw * 0.8);
+          fishPos.y += Math.sin(sw * 9) * 0.05;
+        }
+        s.position.copy(fishPos);
+        s.scale.setScalar(0.35 + e * 0.45);
+        s.material.rotation = k < 1 ? k * Math.PI * 4 : Math.sin(ft * 6) * 0.35;
+        end = fishPos;
+        if (k >= 1 && !fx.shown) {
+          fx.shown = true;
+          catchBanner(fx.it);
+          if (!fx.it.junk) burst(fishPos, fx.it.rare ? 70 : 35, { speed: 2.2, up: 2.5, colors: fx.it.rare ? [0xffd54f, 0xff4081, 0x69f0ae, 0x40c4ff] : [0xffffff, 0xffe082] });
+          dingSound();
+        }
+      }
+    } else {
+      // Sổng: cá nhảy khỏi mặt nước rồi rơi tõm lại
+      s.visible = ft > 0.3 && ft < 1.25;
+      const k = Math.min(1, Math.max(0, (ft - 0.3) / 0.95));
+      s.position.set(bobberPos.x, bobberPos.y + Math.sin(k * Math.PI) * 1.3, bobberPos.z + k * 0.6);
+      s.material.rotation = k * Math.PI * 2;
+      if (k >= 1 && !fx.shown) {
+        fx.shown = true;
+        burst(s.position, 30, { speed: 1.2, up: 2.4 });
+        catchBanner(null);
+      }
+    }
+    if (ft >= fx.dur && !fx.manual) endCatch();
+  }
+  const arr = fishLine.geometry.attributes.position.array;
+  arr.set([rodTip.x, rodTip.y, rodTip.z, end.x, end.y + (fx?.it && ft > 0.35 ? 0.25 : 0.06), end.z]);
+  fishLine.geometry.attributes.position.needsUpdate = true;
+}
+function endCatch() {
+  const fx = catchFx;
+  if (!fx) return;
+  catchFx = null;
+  scene.remove(fx.sprite);
+  fx.sprite.material.map.dispose();
+  fx.sprite.material.dispose();
+  $('catch-banner').className = 'catch-banner hidden';
+  $('overlay-fish').classList.remove('cine');
+  $('hud').classList.remove('cine');
+  fx.onDone?.();
+}
+// Chạy đoạn phim từng khung (dùng khi quay video thử): tiến h giây.
+function stepCatch(h) {
+  if (!catchFx) return;
+  catchFx.manual = true;
+  catchFx.t += h;
+  updateSplash(h);
+}
+// Camera khi câu cá. Lúc câu: máy đứng chéo sau lưng, cao hơn đầu, nhìn ra phao (nhân vật nằm nửa trên màn hình,
+// hộp câu cá ở dưới không che). Lúc chiếu đoạn kéo cá: nhìn ngang từ bên trái, thấy cả người lẫn phao, lia chậm ra biển.
+const cineCam = new THREE.Vector3(), cineLook = new THREE.Vector3(), cineCur = new THREE.Vector3(), cineLookCur = new THREE.Vector3();
+let cineOn = false;
+function cinematicCamera(dt) {
+  if (!meA || (!catchFx && modal !== 'fish')) { cineOn = false; return false; }
+  const y0 = meA.f * FLOOR_H;
+  if (catchFx) {
+    const ft = catchFx.t, a = -1.95 + Math.min(ft, 3.5) * 0.1;
+    cineLook.set(meA.rx + 0.3, y0 + 1.1 + (catchFx.it && ft > 0.4 ? 0.35 : 0), meA.rz + 1.7);
+    cineCam.set(cineLook.x + Math.sin(a) * 4, cineLook.y + 0.55, cineLook.z + Math.cos(a) * 4);
+  } else {
+    // Đang câu: xoay quanh điểm giữa người câu và phao; kéo chuột/vuốt để xoay, lăn/chụm để zoom như bình thường.
+    const cp = Math.cos(cam.pitch);
+    cineLook.set(meA.rx + 0.3, y0 + 0.7, meA.rz + 1.8);
+    cineCam.set(cineLook.x + Math.sin(cam.yaw) * cp * cam.dist, cineLook.y + Math.sin(cam.pitch) * cam.dist, cineLook.z + Math.cos(cam.yaw) * cp * cam.dist);
+    cineCam.y = Math.max(y0 + 0.4, cineCam.y);
+  }
+  if (!cineOn || catchFx?.manual) {
+    // vừa vào chế độ: bắt đầu từ chỗ camera thường đang đứng (lúc quay video thì đặt thẳng)
+    cineCur.copy(catchFx?.manual ? cineCam : camera.position);
+    cineLookCur.copy(catchFx?.manual ? cineLook : camTarget);
+    cineOn = true;
+  }
+  const k = Math.min(1, dt * (catchFx ? 4 : 3));
+  cineCur.lerp(cineCam, k);
+  cineLookCur.lerp(cineLook, k);
+  camera.position.copy(cineCur);
+  camera.lookAt(cineLookCur);
+  return true;
+}
+$('btn-fish-strike').onclick = strikeFish;
+$('btn-fish-close').onclick = stopFishing;
 // Chờ hô xong mới nâng ly uống.
 function drinkUp() {
   const T = TABLES[meA.seat.table];
@@ -4245,10 +5253,15 @@ function oppositeOf(a) {
 }
 // Chọn người cùng bàn để mời. Bàn chỉ có một người khác thì mời luôn.
 let pickList = [];
+// Những người khác đang ngồi cùng bàn với mình (kể cả NPC như chú Ba).
+function tableMates() {
+  const T = meA?.seat?.table;
+  if (T === undefined) return [];
+  return [...allActors(), ...npcs].filter((o) => !isMe(o) && o.seat?.table === T).sort((a, b) => a.seat.idx - b.seat.idx);
+}
 function invitePick() {
   if (modal || state.passedOut || !meA?.seat) return;
-  const T = meA.seat.table;
-  pickList = [...allActors(), ...npcs].filter((o) => !isMe(o) && o.seat?.table === T).sort((a, b) => a.seat.idx - b.seat.idx);
+  pickList = tableMates();
   if (!pickList.length) return toast('Bàn chưa có ai khác, mời ai bây giờ? 😅');
   if (pickList.length === 1) return offerDrink(pickList[0]);
   const opp = oppositeOf(meA);
@@ -4369,6 +5382,7 @@ function showBill() {
     ${rows.map(([n, p]) => `<div class="row"><span>${n}</span><span>${fmt(p)}</span></div>`).join('') || '<div>Chưa có gì trên hoá đơn 😅</div>'}
     <hr>
     <div class="row total"><span>Tổng cả bàn</span><span>${fmt(total)}</span></div>
+    ${net.online ? `<div class="row"><span>💰 Ví của bạn</span><span>${fmt(wallet.money)}</span></div>` : ''}
     ${T && total ? `<div class="row"><span>Nếu chia ${people} người</span><span>${fmt(Math.ceil(total / people / 1000) * 1000)}/người</span></div>` : ''}
     ${extras ? `<div class="row"><span>Bạn đã trả riêng (lạc, bao quán)</span><span>${fmt(extras)}</span></div>` : ''}
     <div class="bill-status ${tab?.paidBy ? 'paid' : ''}">${status}</div>
@@ -4450,6 +5464,7 @@ const ACTIONS = {
   stand: () => meA?.seat && !modal && askStand(),
   dance: () => toggleDance(),
   invite: invitePick,
+  fish: startFishing,
 };
 
 addEventListener('keydown', (e) => {
@@ -4466,6 +5481,10 @@ addEventListener('keydown', (e) => {
     else if (e.code === 'Escape' && modal === 'end') closeEnd();
     else if (modal === 'leave' && (e.code === 'Escape' || e.code === 'Enter')) confirmStand(e.code === 'Enter');
     else if (modal === 'pick' && e.code === 'Escape') closeModal();
+    else if (modal === 'fish' && catchFx) { /* đang chiếu đoạn kéo cá */ }
+    else if (modal === 'fish' && (e.code === 'Space' || e.code === 'Enter')) { e.preventDefault(); strikeFish(); }
+    else if (modal === 'fish' && e.code === 'Escape') stopFishing();
+    else if ((modal === 'bag' || modal === 'bottle') && e.code === 'Escape') closeModal();
     else if (modal === 'pick' && /^Digit[1-9]$/.test(e.code)) pickInvite(Number(e.code.slice(5)) - 1);
     else if (e.code === 'Escape' && modal === 'donate') closeDonate();
     else if (e.code === 'Escape' && (modal === 'elevator' || modal === 'poem')) closeModal();
@@ -4474,13 +5493,13 @@ addEventListener('keydown', (e) => {
   }
   const map = {
     Digit1: 'cheers', Space: 'cheers', Digit2: 'pour', KeyR: 'pour', Digit3: 'wave', Digit4: 'clap',
-    Digit5: 'menu', KeyM: 'menu', Digit6: 'water', KeyN: 'water', KeyE: 'interact', Digit7: 'dance', Digit8: 'invite',
+    Digit5: 'menu', KeyM: 'menu', Digit6: 'water', KeyN: 'water', KeyE: 'interact', Digit7: 'dance', Digit8: 'invite', KeyF: 'fish',
   };
   if (map[e.code]) {
     e.preventDefault();
     ACTIONS[map[e.code]]();
   }
-  if (e.code === 'KeyB') showBill();
+  if (e.code === 'KeyB' && billPayable()) showBill();
 });
 addEventListener('keyup', (e) => { keys[e.code] = false; });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
@@ -4545,7 +5564,7 @@ function endPointer(e) {
   if (!p) return;
   pointers.delete(e.pointerId);
   canvas.classList.remove('dragging');
-  if (p.moved || pointers.size > 0 || modal || !state.started || state.passedOut || riding || wcBusy) return;
+  if (p.moved || pointers.size > 0 || modal || !state.started || state.passedOut || riding || wcBusy || paying) return;
   const hit = pickAt(e.clientX, e.clientY, mic.singer === myId ? stageClick : null);
   if (!hit) return;
   if (mic.singer === myId) {
@@ -4740,6 +5759,14 @@ function askName(msg) {
   $('player-name').select();
 }
 const joinKey = crypto.randomUUID?.() ?? String(Math.random()).slice(2); // để server nhận ra tab này khi kết nối lại
+// Mã người chơi cố định của trình duyệt này: server giữ ví tiền theo mã này nên vào lại vẫn còn tiền.
+const playerPid = (() => {
+  try {
+    let id = localStorage.getItem('nhau3d-pid');
+    if (!id) localStorage.setItem('nhau3d-pid', (id = crypto.randomUUID?.() ?? `p${Date.now()}${Math.random().toString(36).slice(2)}`));
+    return id;
+  } catch { return joinKey; }
+})();
 
 function renderPickers() {
   const sp = $('shirt-picker');
@@ -4834,7 +5861,7 @@ $('btn-enter').onclick = () => {
   if (meA) removeActor(meA);
   meA = createActor(lookToOpts(state.look, 1), state.name, 'me');
   meA.id = myId;
-  placeAt(meA, Math.random() * 2 - 1, 2.6, Math.PI, 0);
+  placeAt(meA, spawnSpot().x, SPAWN.z, SPAWN.yaw, 0);
   setFill(0);
   updateDrunk();
 
@@ -4906,6 +5933,7 @@ for (const el of document.querySelectorAll('#overlay-settings [data-set]')) {
   el.addEventListener('input', () => {
     const k = el.dataset.set;
     settings[k] = el.type === 'checkbox' ? el.checked : Number(el.value);
+    if (k === 'music') settings.musicPicked = true;
     saveSettings();
     renderSettings();
     applyVolumes();
@@ -4924,7 +5952,6 @@ function closeSettings() {
   else closeModal();
 }
 $('btn-settings').onclick = openSettings;
-$('btn-start-settings').onclick = openSettings;
 $('btn-settings-close').onclick = closeSettings;
 $('btn-elevator-close').onclick = closeModal;
 $('btn-poem-close').onclick = closeModal;
@@ -5015,10 +6042,13 @@ function updateMe(dt, t) {
       done?.();
     }
   }
+  // Chuyến đi thanh toán bị ngắt (lên sân khấu, vào WC…) thì trả lại quyền điều khiển ngay.
+  if (paying && !meA.seat && !pending && !riding && !payPause) setPaying(false);
   if (meA.seat || modal || state.passedOut || mic.singer === myId || riding || wcBusy) return;
 
   let f = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
   let s = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
+  if (paying) f = s = 0; // phím đã giữ từ trước cũng không làm lệch đường đi thanh toán
   const sy = Math.sin(cam.yaw), cy = Math.cos(cam.yaw);
   let vx = -sy * f + cy * s, vz = -cy * f - sy * s;
   if ((f || s || moveTarget) && meA.dancing) toggleDance(false);
@@ -5273,16 +6303,20 @@ function updateChatter(dt) {
   }
 }
 
+const seatOnlyBtns = document.querySelectorAll('.seat-only');
 function updateFocus() {
   focus = null;
   const el = $('prompt');
   const seated = !!meA?.seat && state.started;
   const danceBtn = $('btn-dance');
-  danceBtn.classList.toggle('hidden', !canDance() && !meA?.dancing);
+  // Dzô, rót, gọi mồi, nước lọc chỉ dùng khi ngồi bàn; nút nhảy chỉ hiện khi đứng.
+  seatOnlyBtns.forEach((b) => b.classList.toggle('hidden', !seated));
+  danceBtn.classList.toggle('hidden', seated);
   danceBtn.classList.toggle('on', !!meA?.dancing);
   danceBtn.querySelector('span').textContent = meA?.dancing ? 'Thôi nhảy' : 'Nhảy';
   $('btn-stand').classList.toggle('hidden', !seated);
-  $('btn-invite').classList.toggle('hidden', !seated);
+  $('btn-fish').classList.toggle('hidden', !canFish());
+  $('btn-invite').classList.toggle('hidden', !seated || !tableMates().length); // bàn từ 2 người trở lên mới mời ly được
   $('chat').classList.toggle('hidden', !state.started);
   $('chat-tab-table').disabled = !seated;
   if (!meA || modal || !state.started || meA.seat) { el.classList.add('hidden'); return; }
@@ -5313,7 +6347,7 @@ function updateCamera(dt, t) {
     camTarget.z + Math.cos(cam.yaw) * cp * cam.dist,
   );
   camera.lookAt(camTarget);
-  camera.rotateZ(Math.sin(t * 0.9) * 0.08 * k);
+  if (!cinematicCamera(dt)) camera.rotateZ(Math.sin(t * 0.9) * 0.08 * k);
   camera.rotateY(Math.sin(t * 0.5) * 0.04 * k);
   const filter = k > 0.3 ? `blur(${((k - 0.3) * 3).toFixed(1)}px) saturate(${(1 + k * 0.6).toFixed(2)})` : '';
   if (filter !== lastFilter) {
@@ -5378,7 +6412,12 @@ function loop() {
     meA._sp = Math.hypot(meA.x - px, meA.z - pz) / Math.max(dt, 1e-4);
   }
   updateWorld(dt, t);
+  updateTrader(dt);
+  updateStaff(dt);
   updateStageFx(dt, t);
+  updateBeachItems(t);
+  updateFishGame(dt);
+  updateFishing(dt, t);
   for (const a of [...allActors(), ...npcs]) updateActor(a, dt, t);
   if (state.started) {
     updateChatter(dt);
@@ -5402,4 +6441,6 @@ function loop() {
 loop();
 
 // Dùng cho kiểm thử trong console
-window.__nhau = { state, openSongPicker, FX, rideElevator, cam, audioInfo: () => ({ bgmStep: BGM.step, music: buses.music?.gain.value, karaoke: buses.karaoke?.gain.value, video: tv.player?.getVolume?.(), ctx: audio?.state }), get me() { return meA; }, walkTo, findPath, get localPlaying() { return !!local.src && { t: +(audio.currentTime - local.at).toFixed(1), dur: +local.buf.duration.toFixed(1), gain: +local.gain.gain.value.toFixed(2) }; }, remotes, TABLES, send, pour, cheers, emote, get mic() { return mic; }, tv, screenVideoEl, local, get audio() { return audio; }, DZO };
+window.__beachFirst = () => [...beachItems.values()][0]?.it;
+window.__bgmEl = () => bgmEl;
+window.__nhau = { state, openSongPicker, FX, playCatch, stepCatch, get catchFx() { return catchFx; }, endCatch, showCatch, fishGame, rideElevator, cam, audioInfo: () => ({ bgmFile: bgmEl && { t: +bgmEl.currentTime.toFixed(2), paused: bgmEl.paused }, bgmStep: BGM.step, music: buses.music?.gain.value, karaoke: buses.karaoke?.gain.value, video: tv.player?.getVolume?.(), ctx: audio?.state }), get me() { return meA; }, walkTo, findPath, get localPlaying() { return !!local.src && { t: +(audio.currentTime - local.at).toFixed(1), dur: +local.buf.duration.toFixed(1), gain: +local.gain.gain.value.toFixed(2) }; }, remotes, TABLES, send, pour, cheers, emote, get mic() { return mic; }, tv, screenVideoEl, local, get audio() { return audio; }, DZO, tabs, trader, staff, pour };

@@ -37,6 +37,7 @@ Mở nhiều tab hoặc nhiều máy trong cùng mạng là thấy nhau.
 - **Chat:** kênh 🌏 Cả quán ai trong cơ sở cũng thấy, kênh 🪑 Bàn chỉ người cùng bàn thấy.
 - **Karaoke:** lên sân khấu chọn bài và xếp hàng. Người đứng dưới bấm 💃 để nhảy theo.
 - **Giờ vàng:** cứ 10 phút, cả quán cùng dzô.
+- **Ví tiền:** mỗi người vào được 1.000.000đ ảo. Hết tiền thì ra biển câu cá (đứng sát mép nước) hoặc nhặt cua, ốc, vỏ sò, chai trôi dạt trên bãi rồi mang ra sạp Bà Tư (chân bậc xuống biển) bán. Cá hiếm (cá mú, tôm hùm) được giá cao.
 - **Tính tiền:**
   - Bàn phải gọi món rồi mới tính tiền được.
   - Một người trả cho cả bàn. Ai trả trước thì người khác không trả được nữa.
@@ -50,6 +51,7 @@ Mở nhiều tab hoặc nhiều máy trong cùng mạng là thấy nhau.
 | `ALLOWED_ORIGINS` | Domain trang web được phép kết nối |
 | `TRUST_PROXY=1` | Khi chạy sau reverse proxy |
 | `MAX_CONN_PER_IP` | Số kết nối tối đa mỗi IP |
+| `WALLET_FILE` | File lưu ví người chơi (mặc định `data/wallets.json`) |
 | `YOUTUBE_API_KEY` | Không bắt buộc. Có key thì tìm bài trên YouTube bằng API chính thức (ổn định hơn) |
 
 ## Triển khai

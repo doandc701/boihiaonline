@@ -156,6 +156,7 @@
   <div id="hud" class="hidden">
     <div class="top-left">
       <button id="btn-people" class="chip">👥 <span id="people-count">1</span> người · <span id="room-name"></span></button>
+      <button id="btn-wallet" class="chip wallet-chip" title="Ví tiền và giỏ đồ">💰 <span id="money">1.000.000đ</span> · 🎒 <span id="bag-count">0</span><span id="debt-chip" class="hidden"> · 📒 nợ <b id="debt"></b></span></button>
       <div class="meter">
         <span>Độ say</span>
         <div class="bar"><div id="drunk-bar"></div></div>
@@ -170,7 +171,7 @@
       <button id="btn-donate" class="icon donate-icon" title="Bao chủ quán một ly">🍺</button>
       <button id="btn-settings" class="icon" title="Cài đặt">⚙️</button>
       <button id="btn-sound" class="icon" title="Bật/tắt âm thanh">🔊</button>
-      <button id="btn-bill" class="icon" title="Tính tiền (B)">💸</button>
+      <button id="btn-bill" class="icon hidden" title="Tính tiền (B)">💸</button>
       <button id="btn-leave" class="icon" title="Về nhà">🚪</button>
     </div>
 
@@ -180,14 +181,15 @@
     <div id="golden" class="golden hidden"></div>
 
     <div class="action-bar">
-      <button data-act="cheers" title="Dzô (1 / Space)"><kbd>1</kbd><b>🥂</b><span>Dzô</span></button>
-      <button data-act="pour" title="Rót (2 / R)"><kbd>2</kbd><b>🍺</b><span>Rót</span></button>
+      <button data-act="cheers" class="seat-only hidden" title="Dzô (1 / Space)"><kbd>1</kbd><b>🥂</b><span>Dzô</span></button>
+      <button data-act="pour" class="seat-only hidden" title="Rót (2 / R)"><kbd>2</kbd><b>🍺</b><span>Rót</span></button>
       <button data-act="wave" title="Vẫy chào (3)"><kbd>3</kbd><b>👋</b><span>Chào</span></button>
       <button data-act="clap" title="Vỗ tay (4)"><kbd>4</kbd><b>👏</b><span>Vỗ tay</span></button>
-      <button data-act="menu" title="Gọi mồi (5 / M)"><kbd>5</kbd><b>📜</b><span>Gọi mồi</span></button>
-      <button data-act="water" title="Nước lọc (6 / N)"><kbd>6</kbd><b>💧</b><span>Nước lọc</span></button>
+      <button data-act="menu" class="seat-only hidden" title="Gọi mồi (5 / M)"><kbd>5</kbd><b>📜</b><span>Gọi mồi</span></button>
+      <button data-act="water" class="seat-only hidden" title="Nước lọc (6 / N)"><kbd>6</kbd><b>💧</b><span>Nước lọc</span></button>
       <button data-act="invite" id="btn-invite" class="hidden" title="Mời một người cùng bàn một ly (8)"><kbd>8</kbd><b>🤝</b><span>Mời ly</span></button>
-      <button data-act="dance" id="btn-dance" class="hidden" title="Nhảy theo nhạc (7)"><kbd>7</kbd><b>💃</b><span>Nhảy</span></button>
+      <button data-act="fish" id="btn-fish" class="hidden fish-btn" title="Câu cá (F)"><kbd>F</kbd><b>🎣</b><span>Câu cá</span></button>
+      <button data-act="dance" id="btn-dance" title="Nhảy theo nhạc (7)"><kbd>7</kbd><b>💃</b><span>Nhảy</span></button>
       <button data-act="stand" id="btn-stand" class="hidden" title="Đứng dậy (E)"><kbd>E</kbd><b>🚶</b><span>Đứng dậy</span></button>
     </div>
 
@@ -248,7 +250,6 @@
           <li>Lên <b>sân khấu karaoke</b> xếp hàng hát. Mỗi 10 phút có <b>giờ vàng</b>, cả quán cùng dzô</li>
         </ul>
       </details>
-      <p class="row-btns"><button id="btn-start-settings" class="ghost">⚙️ Cài đặt âm thanh & hiển thị</button></p>
       <p id="stats" class="small"></p>
       <p class="row-btns"><button id="btn-start-donate" class="donate-btn">🍺 Bao chủ quán một ly</button></p>
     </div>
@@ -309,6 +310,45 @@
         <small>Mở app ngân hàng, quét mã để chuyển khoản</small>
       </div>
       <p class="small">Tiền ủng hộ dùng để duy trì máy chủ và làm thêm nội dung cho quán. 🙏</p>
+    </div>
+  </div>
+
+  <div id="overlay-fish" class="overlay fish-dock hidden">
+    <div class="panel fish-panel">
+      <p id="fish-status" class="fish-name">🎣 Thả câu…</p>
+      <div id="fish-bar" class="fish-bar"><div id="fish-zone" class="fish-zone"></div><div id="fish-mark" class="fish-mark"></div></div>
+      <p id="fish-result" class="fish-result">Cá cắn câu thì giật cần (Space) lúc vạch nằm trong vùng xanh.</p>
+      <div class="row-btns">
+        <button id="btn-fish-strike" class="big">🎣 Giật cần</button>
+        <button id="btn-fish-close" class="ghost">Nghỉ câu</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="overlay-bag" class="overlay hidden">
+    <div class="panel bag-panel">
+      <h2>🎒 Giỏ đồ</h2>
+      <p class="sub">Ví: <b id="bag-money"></b></p>
+      <div id="bag-list" class="bag-list"></div>
+      <p id="bag-hint" class="small"></p>
+      <p class="small">Hết tiền thì ra biển: đứng sát mép nước bấm <b>🎣 Câu cá</b>, hoặc nhặt cua, ốc, vỏ sò, chai trôi dạt trên bãi cát.</p>
+      <div class="row-btns">
+        <button id="btn-sell-all">💰 Bán hết</button>
+        <button id="btn-bag-close" class="ghost">Đóng</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="overlay-bottle" class="overlay hidden">
+    <div class="panel poem-panel">
+      <h2>🍾 Lời nhắn trong chai</h2>
+      <div id="bottle-text" class="poem-body"></div>
+      <p id="bottle-from" class="poem-sign"></p>
+      <textarea id="bottle-reply" maxlength="160" rows="2" placeholder="Viết lời nhắn của bạn rồi thả lại ra biển…"></textarea>
+      <div class="row-btns">
+        <button id="btn-bottle-send">🌊 Thả ra biển</button>
+        <button id="btn-bottle-close" class="ghost">Đóng</button>
+      </div>
     </div>
   </div>
 
@@ -408,6 +448,7 @@
       <p class="row-btns">
         <button id="btn-leave-stay" class="ghost">Ngồi tiếp</button>
         <button id="btn-leave-go">Rời bàn</button>
+        <button id="btn-leave-pay" class="hidden">💸 Thanh toán rồi đi</button>
       </p>
     </div>
   </div>
@@ -420,6 +461,7 @@
     </span>
   </div>
 
+  <div id="catch-banner" class="catch-banner hidden"></div>
   <div id="fade"></div>
   <div id="toast"></div>
 
