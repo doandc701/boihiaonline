@@ -180,31 +180,56 @@
     <div id="prompt" class="prompt hidden"></div>
     <div id="golden" class="golden hidden"></div>
 
+    <!-- Thanh hành động: mỗi nhóm (uống / gọi & mời / giao lưu) là một nút, bấm mở ra các nút con; cuối là nút riêng
+         (câu cá, đứng dậy). Nhóm không còn nút con nào hiện thì tự ẩn (CSS :has). -->
     <div class="action-bar">
-      <button data-act="cheers" class="seat-only hidden" title="Dzô (1 / Space)"><kbd>1</kbd><b>🥂</b><span>Dzô</span></button>
-      <button data-act="pour" class="seat-only hidden" title="Rót (2 / R)"><kbd>2</kbd><b>🍺</b><span>Rót</span></button>
-      <button data-act="wave" title="Vẫy chào (3)"><kbd>3</kbd><b>👋</b><span>Chào</span></button>
-      <button data-act="clap" title="Vỗ tay (4)"><kbd>4</kbd><b>👏</b><span>Vỗ tay</span></button>
-      <button data-act="menu" class="seat-only hidden" title="Gọi mồi (5 / M)"><kbd>5</kbd><b>📜</b><span>Gọi mồi</span></button>
-      <button data-act="water" class="seat-only hidden" title="Nước lọc (6 / N)"><kbd>6</kbd><b>💧</b><span>Nước lọc</span></button>
-      <button data-act="invite" id="btn-invite" class="hidden" title="Mời một người cùng bàn một ly (8)"><kbd>8</kbd><b>🤝</b><span>Mời ly</span></button>
-      <button data-act="fish" id="btn-fish" class="hidden fish-btn" title="Câu cá (F)"><kbd>F</kbd><b>🎣</b><span>Câu cá</span></button>
-      <button data-act="dance" id="btn-dance" title="Nhảy theo nhạc (7)"><kbd>7</kbd><b>💃</b><span>Nhảy</span></button>
-      <button data-act="stand" id="btn-stand" class="hidden" title="Đứng dậy (E)"><kbd>E</kbd><b>🚶</b><span>Đứng dậy</span></button>
+      <div class="ab-group" role="group" aria-label="Uống">
+        <button type="button" class="ab-trigger" aria-haspopup="true" aria-expanded="false" title="Uống"><b>🍻</b><span>Uống</span></button>
+        <div class="ab-menu">
+          <button data-act="cheers" class="seat-only hidden" title="Dzô (1 / Space)"><kbd>1</kbd><b>🥂</b><span>Dzô</span></button>
+          <button data-act="pour" class="seat-only hidden" title="Rót (2 / R)"><kbd>2</kbd><b>🍺</b><span>Rót</span></button>
+          <button data-act="water" class="seat-only hidden" title="Nước lọc (6 / N)"><kbd>6</kbd><b>💧</b><span>Nước lọc</span></button>
+        </div>
+      </div>
+      <div class="ab-group" role="group" aria-label="Gọi món và mời">
+        <button type="button" class="ab-trigger" aria-haspopup="true" aria-expanded="false" title="Gọi & mời"><b>📜</b><span>Gọi & mời</span></button>
+        <div class="ab-menu">
+          <button data-act="menu" class="seat-only hidden" title="Gọi mồi (5 / M)"><kbd>5</kbd><b>📜</b><span>Gọi mồi</span></button>
+          <button data-act="invite" id="btn-invite" class="hidden" title="Mời một người cùng bàn một ly (8)"><kbd>8</kbd><b>🤝</b><span>Mời ly</span></button>
+        </div>
+      </div>
+      <div class="ab-group" role="group" aria-label="Giao lưu">
+        <button type="button" class="ab-trigger" aria-haspopup="true" aria-expanded="false" title="Giao lưu"><b>😄</b><span>Giao lưu</span></button>
+        <div class="ab-menu">
+          <button data-act="wave" title="Vẫy chào (3)"><kbd>3</kbd><b>👋</b><span>Chào</span></button>
+          <button data-act="clap" title="Vỗ tay (4)"><kbd>4</kbd><b>👏</b><span>Vỗ tay</span></button>
+          <button data-act="dance" id="btn-dance" title="Nhảy theo nhạc (7)"><kbd>7</kbd><b>💃</b><span>Nhảy</span></button>
+        </div>
+      </div>
+      <button data-act="fish" id="btn-fish" class="hidden fish-btn ab-solid ab-blue" title="Câu cá (F)"><kbd>F</kbd><b>🎣</b><span>Câu cá</span></button>
+      <button data-act="stand" id="btn-stand" class="hidden ab-solid ab-orange" title="Đứng dậy (E)"><kbd>E</kbd><b>🚶</b><span>Đứng dậy</span></button>
     </div>
 
     <div id="chat" class="chat hidden">
-      <div class="chat-tabs" role="tablist" aria-label="Kênh chat">
-        <button id="chat-tab-table" type="button" role="tab" data-scope="table">🪑 Bàn<i class="badge hidden"></i></button>
-        <button id="chat-tab-all" type="button" role="tab" data-scope="all">🌏 Cả quán<i class="badge hidden"></i></button>
-        <button id="chat-toggle" type="button" class="chat-toggle" aria-expanded="false" title="Mở/thu gọn chat">💬 Chat<i class="badge hidden"></i></button>
+      <!-- Mic đang bật: viên đỏ nhắc mọi người đang nghe mình, bấm để tắt. Chọn kênh/bật mic ở Cài đặt → Thoại -->
+      <button type="button" id="voice-live" class="voice-live hidden" title="Mic đang bật. Bấm để tắt (V)"></button>
+      <button id="chat-toggle" type="button" class="chat-toggle" aria-expanded="false" title="Mở khung chat"><b class="ic">💬</b><i class="badge hidden"></i></button>
+      <!-- Khung chat kiểu game mobile: cột tab dọc bên trái (👥 bàn, 🌐 cả quán), tin nhắn bên phải, ô nhập dưới cùng -->
+      <div class="chat-panel">
+        <div class="chat-tabs" role="tablist" aria-label="Kênh chat" aria-orientation="vertical">
+          <button id="chat-tab-table" type="button" role="tab" data-scope="table" title="Chat với cả bàn"><b class="ic">👥</b><i class="badge hidden"></i></button>
+          <button id="chat-tab-all" type="button" role="tab" data-scope="all" title="Chat với cả quán"><b class="ic">🌐</b><i class="badge hidden"></i></button>
+        </div>
+        <div class="chat-main">
+          <button id="chat-close" type="button" class="chat-close" title="Thu gọn chat" aria-label="Thu gọn chat">✕</button>
+          <div id="chat-log" class="chat-log"></div>
+          <div id="chat-log-all" class="chat-log hidden"></div>
+        </div>
+        <form id="chat-form" autocomplete="off">
+          <input id="chat-input" maxlength="140" placeholder="Enter để chat với cả quán">
+          <button type="submit" title="Gửi" aria-label="Gửi"><b class="ic">➤</b></button>
+        </form>
       </div>
-      <div id="chat-log" class="chat-log"></div>
-      <div id="chat-log-all" class="chat-log hidden"></div>
-      <form id="chat-form" autocomplete="off">
-        <input id="chat-input" maxlength="140" placeholder="Enter để chat với cả quán">
-        <button type="submit">Gửi</button>
-      </form>
     </div>
 
     <aside id="people-panel" class="side hidden">
@@ -267,7 +292,6 @@
         <button id="btn-round" class="round">🍻 Bao cả quán một két <small>(500.000đ ảo)</small></button>
       </div>
       <div class="panel-foot row-btns">
-        <button id="btn-menu-bill" class="ghost">💸 Tính tiền</button>
         <button id="btn-menu-close">Xong</button>
       </div>
     </div>
@@ -392,6 +416,21 @@
         <label class="slider"><span>🎤 Karaoke</span><input type="range" min="0" max="100" step="5" data-set="karaoke"><output></output></label>
         <label class="toggle"><input type="checkbox" data-set="bgPlay"><span>Phát tiếp khi chuyển sang tab khác</span></label>
         <p class="small">Nhạc nền tự tắt khi có người lên hát karaoke, hát xong thì bật lại.</p>
+      </section>
+
+      <section id="voice-settings" class="hidden">
+        <h3>🎧 Thoại</h3>
+        <div class="field">🔊 Nghe
+          <div class="seg" role="group" aria-label="Nghe kênh thoại">
+            <button type="button" data-vspk="off">Đóng</button><button type="button" data-vspk="all">🌐 Cả quán</button><button type="button" data-vspk="table">👥 Bàn</button>
+          </div>
+        </div>
+        <div class="field">🎙️ Nói
+          <div class="seg" role="group" aria-label="Micro">
+            <button type="button" data-vmic="off">Đóng</button><button type="button" data-vmic="on">Bật</button>
+          </div>
+        </div>
+        <p id="voice-status" class="small"></p>
       </section>
 
       <section>

@@ -10,6 +10,7 @@ import {
   START_MONEY, ROUND_PRICE, VENDOR_PRICE, FISH, BEACH, ITEMS, BAG_MAX, BEACH_AREA, FISH_ZONE_Z, pickWeighted, drinkOfTable, nearTrader,
 } from '../shared/world.js';
 import { SONGS, parseYouTube, YT_ID } from '../shared/songs.js';
+import { voiceEnabled, voiceUrl, voiceCsp, voiceRoom, voiceToken } from './voice.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.PORT) || 8000;
@@ -32,7 +33,7 @@ const SECURITY_HEADERS = {
     "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://www.youtube.com https://s.ytimg.com",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https://i.ytimg.com",
-    "connect-src 'self' ws: wss:",
+    `connect-src 'self' ws: wss:${voiceCsp}`,
     'frame-src https://www.youtube.com https://www.youtube-nocookie.com',
     "frame-ancestors 'none'",
     "base-uri 'self'",
@@ -303,7 +304,7 @@ function join(room, ws, m) {
   send(ws, {
     t: 'welcome', id: p.id, now: Date.now(), room: room.id,
     players: [...room.players.values()].filter((o) => o !== p).map(pub),
-    dishes: room.dishes, mic: micState(room), features: { ytSearch: !!YOUTUBE_API_KEY },
+    dishes: room.dishes, mic: micState(room), features: { ytSearch: !!YOUTUBE_API_KEY, voice: voiceEnabled },
     rooms: [...room.privateRooms.keys()].map((table) => roomMsg(room, table)),
     tabs: room.tabs.map((_, table) => tabMsg(room, table)),
     chatAll: room.chatAll,
@@ -716,6 +717,15 @@ function handle(room, p, m) {
       if (!o || o.inviteTo?.id !== p.id || Date.now() - o.inviteTo.at > 15000) return;
       o.inviteTo = null;
       send(o.ws, { t: 'invite-reply', id: p.id, ok: !!m.ok });
+      break;
+    }
+    case 'voice-token': {
+      // Vé vào kênh thoại: 'table' chỉ cấp khi đang ngồi bàn (kênh riêng của bàn), 'all' là cả cơ sở.
+      if (!voiceEnabled || !cooldown(p, 'voice', 1500)) return;
+      const scope = m.scope === 'table' ? 'table' : 'all';
+      if (scope === 'table' && !p.seat) { send(p.ws, { t: 'notice', msg: 'Ngồi vào bàn rồi mới nói chuyện với cả bàn được nhé!' }); return; }
+      const lkRoom = voiceRoom(room.id, scope, p.seat?.table);
+      send(p.ws, { t: 'voice-token', scope, table: p.seat?.table ?? null, url: voiceUrl, token: voiceToken({ room: lkRoom, gameId: p.id, name: p.name }) });
       break;
     }
     case 'yt-search': {

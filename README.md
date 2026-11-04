@@ -35,6 +35,7 @@ Mở nhiều tab hoặc nhiều máy trong cùng mạng là thấy nhau.
 - **Ngồi bàn:** click vào bàn để ngồi ghế trống.
 - **Dzô:** một người dzô là cả bàn dzô theo, ly ai rỗng thì tự rót đầy (tính vào hoá đơn). Bấm 🤝 (phím 8) chọn người cùng bàn để mời, đồng ý là cùng dzô.
 - **Chat:** kênh 🌏 Cả quán ai trong cơ sở cũng thấy, kênh 🪑 Bàn chỉ người cùng bàn thấy.
+- **Thoại:** chọn kênh 🎧 Bàn hoặc Cả quán phía trên khung chat, bấm 🎙️ (phím V) để nói. Có thể tắt tiếng từng người trong danh sách 👥.
 - **Karaoke:** lên sân khấu chọn bài và xếp hàng. Người đứng dưới bấm 💃 để nhảy theo.
 - **Giờ vàng:** cứ 10 phút, cả quán cùng dzô.
 - **Ví tiền:** mỗi người vào được 1.000.000đ ảo. Hết tiền thì ra biển câu cá (đứng sát mép nước) hoặc nhặt cua, ốc, vỏ sò, chai trôi dạt trên bãi rồi mang ra sạp Bà Tư (chân bậc xuống biển) bán. Cá hiếm (cá mú, tôm hùm) được giá cao.
@@ -55,6 +56,7 @@ Mở nhiều tab hoặc nhiều máy trong cùng mạng là thấy nhau.
 | `YOUTUBE_API_KEY` | Không bắt buộc. Có key thì tìm bài trên YouTube bằng API chính thức (ổn định hơn) |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Lưu ví, hoá đơn, mồi trên bàn lên Upstash Redis để deploy lại không mất. Không có thì lưu file `data/state.json` |
 | `HOLD_MS` | Thời gian giữ chỗ bàn chưa trả tiền, mặc định 180000 (3 phút) |
+| `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | Bật thoại (nói chuyện bằng giọng) qua LiveKit. Thiếu thì ẩn thoại |
 
 ## Triển khai
 

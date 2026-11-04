@@ -10,6 +10,7 @@ import {
   START_MONEY, ROUND_PRICE, VENDOR_PRICE, ITEMS, FISH_ZONE_Z, TRADER, nearTrader,
 } from '/shared/world.js';
 import { SONGS, GENRES, DEFAULT_SONG, parseYouTube } from '/shared/songs.js';
+import { createVoice } from './voice.js';
 
 // ================= Cấu hình =================
 // Tài khoản nhận ủng hộ ("Bao chủ quán một ly"), ảnh QR ở public/donate-qr.png.
@@ -2452,8 +2453,14 @@ function settleStaff() {
 }
 function updateStaff(dt) {
   if (!staffSettled) settleStaff();
+  const waitFor = pending?.pos?.();
   for (const st of staff) {
     const a = st.a;
+    // Khách đang đi tới gọi mình thì đứng lại chờ, quay mặt về phía khách.
+    if (waitFor === a && meA && Math.hypot(meA.x - a.x, meA.z - a.z) < 12) {
+      a.yaw = Math.atan2(meA.x - a.x, meA.z - a.z);
+      continue;
+    }
     if (st.route.length) {
       const wp = st.route[0], dx = wp.x - a.x, dz = wp.z - a.z, d = Math.hypot(dx, dz), step = st.speed * dt;
       if (d <= step) {
@@ -3944,6 +3951,8 @@ function onMessage(m) {
       TABLES.forEach((T) => T.dishes.clear());
       m.dishes.forEach((items, table) => items.forEach((item) => serveDish(table, item, true)));
       features = m.features || features;
+      voice.leave(); // kết nối lại quán thì vào lại kênh thoại sau
+      renderVoice();
       setMic(m.mic);
       if (net.rejoin) {
         // Nối lại sau khi rớt mạng / server deploy: đứng lại chỗ cũ, đang ngồi thì ngồi lại bàn cũ.
@@ -4177,6 +4186,9 @@ function onMessage(m) {
       net.restarting = true; // server sắp tắt để lên bản mới: lát nữa tự nối lại
       toast('🔧 Quán đang nâng cấp, vài giây nữa vào lại…');
       break;
+    case 'voice-token':
+      voice.join(m.scope, m.table, m.url, m.token);
+      break;
     case 'yt-results':
       renderYouTube(m);
       break;
@@ -4308,6 +4320,86 @@ function closeModal() {
   for (const id of Object.values(OVERLAYS)) $(id).classList.add('hidden');
 }
 
+// ================= Thoại (LiveKit) =================
+// Chọn kênh nghe (Đóng / Cả quán / Bàn) và bật mic ở Cài đặt → Thoại; phím V bật/tắt mic. Mỗi lúc chỉ ở một kênh.
+// Mic đang bật thì hiện viên đỏ cạnh khung chat để luôn biết mọi người đang nghe mình.
+let voiceSpeakers = new Set(), voicePeers = new Map();
+let voiceWantMic = false; // đang chờ vào kênh xong thì bật mic
+const VOICE_LABEL = { all: 'Cả quán', table: 'Bàn' };
+const voice = createVoice({
+  onState: renderVoice,
+  onSpeakers: (set) => { voiceSpeakers = set; markSpeakers(); },
+  onPeers: (map) => { voicePeers = map; updatePeople(); },
+  onError: (msg) => toast(`🎧 ${msg}`),
+  onAutoLeave: (why) => {
+    const msg = why === 'idle' ? '🎧 Kênh thoại im lặng 3 phút nên đã tự ngắt. Vào ⚙️ Cài đặt → Thoại để nghe lại nhé'
+      : '🎧 Bạn rời tab hơn 1 phút nên thoại đã tự ngắt. Vào ⚙️ Cài đặt → Thoại để nghe lại nhé';
+    if (document.hidden) addEventListener('visibilitychange', () => toast(msg), { once: true });
+    else toast(msg);
+  },
+});
+function renderVoice() {
+  $('voice-settings').classList.toggle('hidden', !features.voice);
+  // Vừa vào kênh xong mà đang chờ bật mic (bật mic lúc chưa vào kênh)
+  if (voiceWantMic && voice.scope && !voice.connecting) {
+    voiceWantMic = false;
+    setVoiceMic(true);
+  }
+  const cur = voice.scope || 'off', ch = VOICE_LABEL[voice.scope] || '';
+  document.querySelectorAll('[data-vspk]').forEach((b) => {
+    b.classList.toggle('on', b.dataset.vspk === cur);
+    if (b.dataset.vspk === 'table') b.disabled = !meA?.seat;
+  });
+  document.querySelectorAll('[data-vmic]').forEach((b) => b.classList.toggle('on', (b.dataset.vmic === 'on') === voice.mic));
+  $('voice-status').textContent = voice.connecting ? '⏳ Đang vào kênh…'
+    : voice.scope ? `Đang nghe kênh ${ch}${voice.mic ? `, mic đang bật (${ch === 'Bàn' ? 'cả bàn' : 'cả quán'} nghe bạn nói)` : ''}. Kênh im lặng 3 phút hoặc rời tab hơn 1 phút thì tự ngắt.`
+    : 'Thoại đang đóng. Chọn kênh để nghe, bật mic (hoặc phím V) để nói.';
+  const live = $('voice-live');
+  live.classList.toggle('hidden', !voice.mic || !state.started);
+  live.textContent = `🎙️ ${ch}`;
+  markSpeakers();
+}
+function markSpeakers() {
+  for (const a of allActors()) a.tag.classList.toggle('speaking', voiceSpeakers.has(String(a.id)));
+}
+function joinVoice(scope) {
+  if (scope === 'off') return voice.leave();
+  if (!net.online) return toast('Cần kết nối với quán mới dùng thoại được');
+  if (scope === 'table' && !meA?.seat) return toast('Ngồi vào bàn rồi mới nói chuyện với cả bàn được nhé!');
+  if (voice.scope === scope && (scope !== 'table' || voice.table === meA.seat.table)) return;
+  send({ t: 'voice-token', scope });
+}
+async function setVoiceMic(want) {
+  const on = await voice.setMic(want);
+  if (on) toast(voice.scope === 'table' ? '🎙️ Cả bàn đang nghe bạn nói' : '🎙️ Cả quán đang nghe bạn nói');
+  renderVoice();
+}
+// Cài đặt → Thoại: chọn kênh nghe. Đổi kênh lúc mic đang bật thì sang kênh mới vẫn bật mic.
+document.querySelectorAll('[data-vspk]').forEach((b) => (b.onclick = () => {
+  const next = b.dataset.vspk;
+  if (voice.connecting || next === (voice.scope || 'off')) return;
+  voiceWantMic = next !== 'off' && voice.mic;
+  joinVoice(next);
+}));
+// Bật mic: chưa vào kênh nào thì tự vào (đang ngồi: Bàn, không thì Cả quán) rồi bật.
+function voiceMicOn() {
+  if (!features.voice || voice.connecting) return;
+  if (voice.scope) return setVoiceMic(true);
+  voiceWantMic = true;
+  joinVoice(meA?.seat ? 'table' : 'all');
+}
+const toggleVoiceMic = () => (voice.mic ? setVoiceMic(false) : voiceMicOn());
+document.querySelectorAll('[data-vmic]').forEach((b) => (b.onclick = () => (b.dataset.vmic === 'on' ? voiceMicOn() : setVoiceMic(false))));
+$('voice-live').onclick = (e) => { e.currentTarget.blur(); setVoiceMic(false); };
+// Rời bàn / đổi bàn thì ra khỏi kênh thoại của bàn cũ.
+function voiceSeatChanged() {
+  if (voice.scope === 'table' && voice.table !== meA?.seat?.table) {
+    voice.leave();
+    toast('🎧 Đã rời kênh thoại của bàn');
+  }
+  renderVoice();
+}
+
 function updatePeople() {
   const list = allActors();
   $('people-count').textContent = list.length;
@@ -4320,6 +4412,14 @@ function updatePeople() {
     const s = document.createElement('small');
     s.textContent = a.singing ? `🎤 ${mic.track?.title || 'đang hát'}` : a.seat ? `🪑 ${tableName(TABLES[a.seat.table])}` : `🚶 ${FLOOR_NAMES[a.f]}`;
     li.append(n, s);
+    // Người đang trong kênh thoại của mình: nút tắt tiếng riêng người đó (chỉ ở máy mình)
+    if (a !== meA && voicePeers.has(String(a.id))) {
+      const b = document.createElement('button');
+      b.className = 'voice-mute';
+      b.textContent = voice.isBlocked(String(a.id)) ? '🔇 Đã tắt' : '🔊 Tắt tiếng';
+      b.onclick = () => { voice.toggleBlock(String(a.id)); updatePeople(); };
+      li.appendChild(b);
+    }
     ul.appendChild(li);
   }
 }
@@ -4350,6 +4450,17 @@ function setFill(f) {
 }
 
 let menuCat = null; // nhóm món đang lọc, null = tất cả
+// Thực đơn là danh sách chọn: bấm món để đánh dấu ✓ (bấm lại để bỏ), bấm Xong mới gọi các món đã chọn.
+const menuPicks = new Set(); // chỉ số món trong MENU
+function menuPickTotal() {
+  let total = 0;
+  for (const i of menuPicks) total += MENU[i].price;
+  return total;
+}
+function renderMenuDone() {
+  const n = menuPicks.size;
+  $('btn-menu-close').textContent = n ? `✅ Gọi ${n} món · ${fmt(menuPickTotal())}` : 'Xong';
+}
 function renderMenu() {
   const cats = $('menu-cats');
   cats.innerHTML = '';
@@ -4365,24 +4476,40 @@ function renderMenu() {
   MENU.forEach((m, i) => {
     if (menuCat && m.cat !== menuCat) return;
     const b = document.createElement('button');
-    b.className = 'menu-item';
+    b.className = 'menu-item' + (menuPicks.has(i) ? ' picked' : '');
     b.innerHTML = `<b>${m.icon} ${m.name}</b><small>${fmt(m.price)}</small>`;
+    b.disabled = !meA?.seat;
+    b.setAttribute('aria-pressed', String(menuPicks.has(i)));
     b.onclick = () => {
-      if (!canAfford(m.price)) return;
-      send({ t: 'order', item: i });
-      toast(`Đã gọi ${m.icon} ${m.name}`);
+      if (menuPicks.has(i)) menuPicks.delete(i);
+      else menuPicks.add(i);
+      b.classList.toggle('picked', menuPicks.has(i));
+      b.setAttribute('aria-pressed', String(menuPicks.has(i)));
+      renderMenuDone();
     };
     wrap.appendChild(b);
   });
+  renderMenuDone();
+}
+// Xong: gọi các món đã chọn. Server nhận mỗi người một món mỗi nửa giây nên gửi lần lượt cách nhau 0,6 giây.
+function confirmMenu() {
+  const picks = [...menuPicks];
+  if (picks.length && meA?.seat) {
+    if (!canAfford(menuPickTotal())) return;
+    picks.forEach((i, k) => setTimeout(() => send({ t: 'order', item: i }), k * 600));
+    toast(picks.length === 1 ? `Đã gọi ${MENU[picks[0]].icon} ${MENU[picks[0]].name}, bếp làm ngay!` : `Đã gọi ${picks.length} món, bếp làm ngay! 🔥`);
+  }
+  menuPicks.clear();
+  closeModal();
 }
 
 // ================= Hành động của mình =================
 // Nhảy theo nhạc karaoke: chỉ khi có người đang hát và mình đứng ở tầng có sân khấu.
 // Nhảy được ở bất cứ đâu khi đang đứng (người đang cầm mic thì đang hát, không nhảy).
-const canDance = () => !!meA && !meA.seat && mic.singer !== myId && state.started;
+const canDance = () => !!meA && !meA.seat && state.started; // đang hát cũng nhảy được, tay vẫn cầm mic
 function toggleDance(on = !meA?.dancing) {
   if (!meA || modal || state.passedOut) return;
-  if (on && !canDance()) return toast(meA.seat ? 'Đứng dậy rồi mới nhảy được nhé!' : 'Đang cầm mic thì hát đã, nhảy sau 😆');
+  if (on && !canDance()) return toast('Đứng dậy rồi mới nhảy được nhé!');
   if (!!meA.dancing === on) return;
   meA.dancing = on;
   sendAct(on ? 'dance' : 'dance-stop');
@@ -4392,6 +4519,7 @@ function toggleDance(on = !meA?.dancing) {
 let chatTable = -1; // bàn đang có tin nhắn trong khung chat
 function onSitMine() {
   if (meA.dancing) toggleDance(false);
+  voiceSeatChanged();
   if (paying) setPaying(false); // đang đi thanh toán mà bấm E ngồi lại bàn thì thôi
   pourPending = false;
   updateBillButton();
@@ -4426,7 +4554,10 @@ function setChatScope(scope) {
   }
   $('chat-log').classList.toggle('hidden', scope !== 'table');
   $('chat-log-all').classList.toggle('hidden', scope !== 'all');
-  $('chat-input').placeholder = scope === 'all' ? 'Enter để chat với cả quán' : 'Enter để chat với cả bàn · E đứng dậy';
+  // Điện thoại không có phím Enter/E nên gợi ý ngắn gọn
+  $('chat-input').placeholder = matchMedia('(max-width: 900px), (max-height: 500px)').matches
+    ? (scope === 'all' ? 'Nhắn cả quán…' : 'Nhắn cả bàn…')
+    : scope === 'all' ? 'Enter để chat với cả quán' : 'Enter để chat với cả bàn · E đứng dậy';
   const log = scope === 'all' ? $('chat-log-all') : $('chat-log');
   log.scrollTop = log.scrollHeight;
 }
@@ -4445,7 +4576,6 @@ function applyChatLayout() {
   const chat = $('chat'), btn = $('chat-toggle');
   chat.classList.toggle('compact', chatMQ.matches);
   chat.classList.toggle('collapsed', chatFolded());
-  btn.firstChild.textContent = chatFolded() ? '💬 Chat' : '▾ Thu gọn';
   btn.setAttribute('aria-expanded', !chatFolded());
   if (!chatFolded()) {
     btn.querySelector('.badge').classList.add('hidden');
@@ -4455,10 +4585,15 @@ function applyChatLayout() {
 }
 function setChatOpen(open) {
   chatCollapsed = !open;
+  if (!open) $('chat-input').blur(); // thu gọn chat thì trả phím về cho game
   applyChatLayout();
 }
 $('chat-toggle').onclick = (e) => {
-  setChatOpen(chatCollapsed);
+  setChatOpen(true);
+  e.currentTarget.blur();
+};
+$('chat-close').onclick = (e) => { // ✕ trong khung chat (điện thoại): thu gọn lại thành nút 💬
+  setChatOpen(false);
   e.currentTarget.blur();
 };
 chatMQ.addEventListener('change', applyChatLayout);
@@ -4489,7 +4624,9 @@ $('chat-form').addEventListener('submit', (e) => {
   if (text && chatScope === 'all') send({ t: 'chat', scope: 'all', text: text.slice(0, CHAT_MAX) });
   else if (text && meA?.seat) send({ t: 'chat', text: text.slice(0, CHAT_MAX) });
   input.value = '';
-  input.blur(); // trả phím về cho game
+  // Gửi xong vẫn ở trong ô chat để nhắn tiếp; Enter khi ô trống, Esc, bấm ra ngoài hoặc đóng chat mới trả phím về game.
+  if (!text) input.blur();
+  else input.focus();
 });
 $('chat-input').addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
@@ -4498,6 +4635,7 @@ $('chat-input').addEventListener('keydown', (e) => {
   }
 });
 function onStandMine(T) {
+  voiceSeatChanged();
   const dx = meA.x - T.x, dz = meA.z - T.z, d = Math.hypot(dx, dz) || 1;
   placeAt(meA, T.x + (dx / d) * 1.75, T.z + (dz / d) * 1.75);
   busy = null;
@@ -5376,8 +5514,9 @@ $('btn-invite-no').onclick = () => answerInvite(false);
 function openMenu() {
   if (state.passedOut) return;
   const T = meA.seat ? TABLES[meA.seat.table] : null;
-  $('menu-target').textContent = T ? `Món sẽ mang ra ${tableName(T)}` : 'Ngồi vào bàn để gọi mồi nhé. Bao cả quán thì đứng đâu cũng được!';
-  $('menu-items').querySelectorAll('button').forEach((b) => (b.disabled = !T));
+  $('menu-target').textContent = T ? `Chọn món rồi bấm Gọi, món sẽ mang ra ${tableName(T)}` : 'Ngồi vào bàn để gọi mồi nhé. Bao cả quán thì đứng đâu cũng được!';
+  menuPicks.clear(); // mỗi lần mở thực đơn chọn lại từ đầu
+  renderMenu();
   openModal('menu');
 }
 
@@ -5487,6 +5626,7 @@ function resetSession() {
 
 // Popup chào về nhà chưa rời quán thật: ✕ là ở lại quán, "Quay lại quán" mới kết thúc cuộc và vào lại từ đầu.
 function leaveForHome() {
+  voice.leave();
   openModal('end');
 }
 function closeEnd() {
@@ -5533,10 +5673,12 @@ const ACTIONS = {
   dance: () => toggleDance(),
   invite: invitePick,
   fish: startFishing,
+  voiceMic: () => toggleVoiceMic(),
 };
 
 addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement) return;
+  if (e.code === 'Escape') closeActionGroups();
   if (e.code === 'Enter' && !modal && state.started) {
     e.preventDefault();
     setChatOpen(true);
@@ -5561,7 +5703,7 @@ addEventListener('keydown', (e) => {
   }
   const map = {
     Digit1: 'cheers', Space: 'cheers', Digit2: 'pour', KeyR: 'pour', Digit3: 'wave', Digit4: 'clap',
-    Digit5: 'menu', KeyM: 'menu', Digit6: 'water', KeyN: 'water', KeyE: 'interact', Digit7: 'dance', Digit8: 'invite', KeyF: 'fish',
+    Digit5: 'menu', KeyM: 'menu', Digit6: 'water', KeyN: 'water', KeyE: 'interact', Digit7: 'dance', Digit8: 'invite', KeyF: 'fish', KeyV: 'voiceMic',
   };
   if (map[e.code]) {
     e.preventDefault();
@@ -5588,9 +5730,15 @@ function pickAt(x, y, skip) {
   raycaster.setFromCamera(ndc, camera);
   const f = meA?.f ?? 0;
   const here = clickables.filter((o) => o !== skip && floorOf(o.userData.click) === f);
-  for (const hit of raycaster.intersectObjects(here, false)) {
-    if (hit.object === meA?.hit) continue;
-    return { info: hit.object.userData.click };
+  const hits = raycaster.intersectObjects(here, false).filter((h) => h.object !== meA?.hit);
+  if (hits.length) {
+    // Vùng bấm của bàn to, hay trùm lên người đứng sát bàn (em order, khách): người ngay sau mép bàn thì ưu tiên người.
+    const first = hits[0];
+    if (first.object.userData.click.tableId !== undefined) {
+      const person = hits.find((h) => h.object.userData.click.tableId === undefined && h.distance - first.distance < 1.6);
+      if (person) return { info: person.object.userData.click };
+    }
+    return { info: first.object.userData.click };
   }
   groundPlane.constant = -f * FLOOR_H;
   const p = new THREE.Vector3();
@@ -5599,6 +5747,7 @@ function pickAt(x, y, skip) {
 }
 
 canvas.addEventListener('pointerdown', (e) => {
+  if (document.activeElement === $('chat-input')) $('chat-input').blur(); // bấm ra cảnh thì thoát ô chat
   canvas.setPointerCapture(e.pointerId);
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moved: false });
   if (pointers.size === 2) {
@@ -5645,10 +5794,10 @@ function endPointer(e) {
   }
   if (meA.seat) {
     if (hit.info?.tableId === meA.seat.table) return;
-    if (hit.info?.kind === 'player') {
-      // Mời ly người khác thì không cần đứng dậy nếu đủ gần.
+    if (hit.info && hit.info.tableId === undefined) {
+      // Mời ly người khác, gọi món với em order đứng cạnh bàn…: đủ gần thì làm luôn, không cần đứng dậy.
       const pos = hit.info.pos();
-      if (Math.hypot(pos.x - meA.x, pos.z - meA.z) <= hit.info.range) { hit.info.action(); return; }
+      if (Math.hypot(pos.x - meA.x, pos.z - meA.z) <= hit.info.range + 0.8) { hit.info.action(); return; }
     }
     askStand(() => goTo(hit)); // đồng ý rời bàn thì mới đi tới chỗ vừa bấm
     return;
@@ -5677,9 +5826,51 @@ canvas.addEventListener('wheel', (e) => {
 }, { passive: false });
 
 document.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => {
+  closeActionGroups(); // bấm một nút con xong thì đóng nhóm
   ACTIONS[b.dataset.act]();
   b.blur(); // để phím Space không bấm lại nút
 }));
+
+// Thanh hành động: mỗi nhóm là một nút, bấm mở bảng nút con. Nhóm chỉ còn một nút con hiện thì nút nhóm làm luôn
+// việc của nút đó (khỏi bấm hai lần). Bấm ra ngoài, Esc hoặc mở nhóm khác thì đóng.
+const actionGroups = [...document.querySelectorAll('.ab-group')].map((g) => {
+  const trigger = g.querySelector('.ab-trigger');
+  return { g, trigger, icon: trigger.querySelector('b').textContent, label: trigger.querySelector('span').textContent, key: '' };
+});
+const groupItems = (grp) => [...grp.g.querySelectorAll('.ab-menu > button:not(.hidden)')];
+function closeActionGroups(except) {
+  for (const grp of actionGroups) {
+    if (grp === except || !grp.g.classList.contains('open')) continue;
+    grp.g.classList.remove('open');
+    grp.trigger.setAttribute('aria-expanded', 'false');
+  }
+}
+for (const grp of actionGroups) {
+  grp.trigger.onclick = (e) => {
+    grp.trigger.blur();
+    const items = groupItems(grp);
+    if (items.length === 1) { closeActionGroups(); items[0].click(); return; }
+    const open = !grp.g.classList.contains('open');
+    closeActionGroups(grp);
+    grp.g.classList.toggle('open', open);
+    grp.trigger.setAttribute('aria-expanded', String(open));
+  };
+}
+addEventListener('pointerdown', (e) => { if (!e.target.closest?.('.ab-group')) closeActionGroups(); });
+// Gọi mỗi khung hình (updateFocus): nút nhóm hiện đúng nút con duy nhất, hoặc biểu tượng nhóm; sáng xanh khi có nút con đang bật.
+function syncActionGroups() {
+  for (const grp of actionGroups) {
+    const items = groupItems(grp), one = items.length === 1 ? items[0] : null, on = items.some((b) => b.classList.contains('on'));
+    const key = `${one ? one.dataset.act + one.querySelector('span').textContent : items.length}|${on}`;
+    if (key === grp.key) continue;
+    grp.key = key;
+    grp.trigger.querySelector('b').textContent = one ? one.querySelector('b').textContent : grp.icon;
+    grp.trigger.querySelector('span').textContent = one ? one.querySelector('span').textContent : grp.label;
+    grp.trigger.title = one ? one.title : grp.label;
+    grp.trigger.classList.toggle('on', on);
+    if (one || !items.length) { grp.g.classList.remove('open'); grp.trigger.setAttribute('aria-expanded', 'false'); }
+  }
+}
 
 // ================= Màn bắt đầu =================
 // ---------- Xem trước nhân vật ở màn bắt đầu ----------
@@ -5949,8 +6140,7 @@ $('btn-enter').onclick = () => {
   updatePeople();
   setTimeout(() => toast('Click vào một bàn để ngồi. Không có nát, chỉ có dzô 🍻'), 800);
 };
-$('btn-menu-close').onclick = closeModal;
-$('btn-menu-bill').onclick = showBill;
+$('btn-menu-close').onclick = confirmMenu;
 $('btn-round').onclick = () => { send({ t: 'round' }); closeModal(); };
 $('btn-bill').onclick = () => !modal && showBill();
 $('btn-leave').onclick = leaveForHome;
@@ -5971,6 +6161,7 @@ $('btn-sound').onclick = () => {
   ac();
   master.gain.value = muted ? 0 : 1;
   $('btn-sound').textContent = muted ? '🔇' : '🔊';
+  voice.setMuteAll(muted);
   syncVideo();
 };
 
@@ -6142,6 +6333,13 @@ function updateMe(dt, t) {
   }
   if (pending) {
     const p = pending.pos();
+    // Đang đi tới một người cũng đang đi (nhân viên): người đó đổi chỗ thì tính lại đường.
+    if (moveTarget && Math.hypot(p.x - moveTarget.x, p.z - moveTarget.z) > 0.8 && (pending.repath = (pending.repath || 0) + dt) > 0.4) {
+      pending.repath = 0;
+      const keep = pending;
+      walkTo(p.x, p.z);
+      pending = keep;
+    }
     if (Math.hypot(p.x - meA.x, p.z - meA.z) <= pending.range) {
       const action = pending.action;
       pending = moveTarget = null;
@@ -6192,8 +6390,8 @@ function updateActor(a, dt, t) {
   }
   // Say thì lắc lư
   p.body.rotation.z = Math.sin(t * 1.3 + a.rx) * 0.12 * (a.d / 100);
-  p.body.position.y = (p.seated ? SEAT_DROP : 0) + (a.singing ? Math.abs(Math.sin(t * 6)) * 0.04 : 0)
-    + (a.dancing && !p.seated ? Math.abs(Math.sin(t * 6)) * 0.08 : 0);
+  p.body.position.y = (p.seated ? SEAT_DROP : 0)
+    + (a.dancing && !p.seated ? Math.abs(Math.sin(t * 6)) * 0.08 : a.singing ? Math.abs(Math.sin(t * 6)) * 0.04 : 0);
 
   a.animT += dt;
   if (a.anim === 'cheers' && a.animT > 0.8) { a.anim = 'drink'; a.animT = 0; }
@@ -6217,6 +6415,8 @@ function updateActor(a, dt, t) {
     lx = -2.4 + Math.sin(t * 6 + Math.PI) * 0.6;
     rz = -0.3 - Math.sin(t * 3) * 0.2;
     lz = 0.3 + Math.sin(t * 3) * 0.2;
+    // Vừa hát vừa nhảy: tay phải vẫn cầm mic sát miệng, chỉ nhún nhẹ theo nhịp; tay trái vung tự do
+    if (a.singing) { rx = -2.5 + Math.sin(t * 6) * 0.12; rz = -0.45; }
   }
   if (a.fixedArms) rx = lx = a.fixedArms + (a.stir ? Math.sin(t * 5) * 0.25 : 0);
   const k = Math.min(1, dt * 10);
@@ -6385,6 +6585,7 @@ function updateFocus() {
   danceBtn.classList.toggle('hidden', seated);
   danceBtn.classList.toggle('on', !!meA?.dancing);
   danceBtn.querySelector('span').textContent = meA?.dancing ? 'Thôi nhảy' : 'Nhảy';
+  syncActionGroups();
   $('btn-stand').classList.toggle('hidden', !seated);
   $('btn-fish').classList.toggle('hidden', !canFish());
   $('btn-invite').classList.toggle('hidden', !seated || !tableMates().length); // bàn từ 2 người trở lên mới mời ly được
