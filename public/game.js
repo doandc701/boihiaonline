@@ -1353,6 +1353,317 @@ const stageClick = clickable(box(STAGE.w, 1.8, STAGE.d, HIT_MAT, STAGE.x, 0.9, S
   action: () => singDefault(),
 });
 
+// ---------- Ánh sáng & hiệu ứng sân khấu (chỉ chạy khi có người hát) ----------
+// Giàn khung trên sân khấu treo đèn Moving Head, Par LED, Spotlight, đèn quay 7 màu, laser, đèn chớp;
+// màn LED hai bên và băng LED trên giàn; máy khói, máy bắn pháo điện, máy bong bóng.
+// Nhạc YouTube không đọc được sóng âm, nên "cảm ứng theo nhạc" dùng nhịp giả 118 BPM.
+const FX = { on: 0, lastStart: 0, burstUntil: 0, nextBurst: 0, ledT: 0 };
+const TRUSS = { front: STAGE.x - 1.55, back: STAGE.x + 1.45, z0: STAGE.z - 2.6, z1: STAGE.z + 2.6, y: 3.35 };
+const trussMat = mat(0x9e9e9e, { metalness: 0.7, roughness: 0.35 });
+for (const x of [TRUSS.front, TRUSS.back]) for (const z of [TRUSS.z0, TRUSS.z1]) add(new THREE.BoxGeometry(0.12, TRUSS.y, 0.12), trussMat, x, TRUSS.y / 2, z, F3);
+for (const x of [TRUSS.front, TRUSS.back]) add(new THREE.BoxGeometry(0.14, 0.14, TRUSS.z1 - TRUSS.z0 + 0.14), trussMat, x, TRUSS.y, STAGE.z, F3);
+for (const z of [TRUSS.z0, TRUSS.z1]) add(new THREE.BoxGeometry(TRUSS.back - TRUSS.front, 0.14, 0.14), trussMat, STAGE.x - 0.05, TRUSS.y, z, F3);
+solidCircle(2, TRUSS.front, TRUSS.z0, 0.2);
+solidCircle(2, TRUSS.front, TRUSS.z1, 0.2);
+
+const additive = (color, opacity, extra) => new THREE.MeshBasicMaterial({
+  color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false, ...extra,
+});
+// Chùm sáng: sáng ở đầu đèn, mờ dần về cuối (ánh sáng xuyên khói)
+const beamTex = canvasTexture(4, 64, (g, w, h) => {
+  const gr = g.createLinearGradient(0, 0, 0, h);
+  gr.addColorStop(0, '#fff');
+  gr.addColorStop(1, '#000');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, w, h);
+});
+function beamGeo(r0, r1, len) {
+  const geo = new THREE.CylinderGeometry(r0, r1, len, 18, 1, true);
+  geo.translate(0, -len / 2, 0); // gốc chùm ở đầu đèn, chiếu theo trục -y
+  return geo;
+}
+const DOWN = new THREE.Vector3(0, -1, 0), fxDir = new THREE.Vector3(), fxPos = new THREE.Vector3();
+function aimBeam(beam, from, to) {
+  fxDir.subVectors(to, from).normalize();
+  beam.quaternion.setFromUnitVectors(DOWN, fxDir);
+}
+
+// Đèn Moving Head: 4 đèn treo dưới thanh trước, quay đầu quét xuống khán giả và lên trời
+const movers = [-1.8, -0.6, 0.6, 1.8].map((dz, i) => {
+  const z = STAGE.z + dz, y = TRUSS.y - 0.25;
+  box(0.22, 0.12, 0.22, 0x222222, TRUSS.front, TRUSS.y - 0.1, z, F3);
+  const head = ball(0.12, 0x111111, TRUSS.front, y, z, F3);
+  const beam = add(beamGeo(0.04, 0.75, 7), additive(0xffffff, 0.28, { map: beamTex }), TRUSS.front, y, z, F3);
+  return { head, beam, from: new THREE.Vector3(TRUSS.front, y, z), i };
+});
+// Spotlight trắng rọi người hát
+const spot = new THREE.SpotLight(0xfff4e0, 0, 9, 0.32, 0.5, 1.2);
+spot.position.set(TRUSS.front, TRUSS.y - 0.2, STAGE.z);
+spot.target.position.set(STAGE.singerX, 0.6, STAGE.singerZ);
+F3.add(spot, spot.target);
+cyl(0.1, 0.13, 0.3, 0x333333, TRUSS.front, TRUSS.y - 0.2, STAGE.z, F3).rotation.z = Math.PI / 2.6;
+const spotBeam = add(beamGeo(0.06, 0.55, 3.4), additive(0xfff4e0, 0.12, { map: beamTex }), TRUSS.front, TRUSS.y - 0.2, STAGE.z, F3);
+aimBeam(spotBeam, spot.position, spot.target.position);
+// Par LED: 6 đèn trên thanh sau và hai bên, đổi màu theo nhịp
+const pars = [];
+for (const [x, z] of [[TRUSS.back, STAGE.z - 1.6], [TRUSS.back, STAGE.z], [TRUSS.back, STAGE.z + 1.6], [STAGE.x - 0.6, TRUSS.z0], [STAGE.x - 0.6, TRUSS.z1], [STAGE.x + 0.6, TRUSS.z0]]) {
+  cyl(0.09, 0.09, 0.16, 0x1a1a1a, x, TRUSS.y - 0.15, z, F3);
+  const lens = add(new THREE.CircleGeometry(0.08, 16), new THREE.MeshBasicMaterial({ color: 0x222222 }), x, TRUSS.y - 0.235, z, F3);
+  lens.rotation.x = Math.PI / 2;
+  pars.push(lens);
+}
+// Đèn quay 7 màu (quả cầu gương) treo giữa giàn, toả 7 chùm màu quay vòng
+const disco = new THREE.Group();
+disco.position.set(STAGE.x - 0.3, TRUSS.y - 0.45, STAGE.z);
+F3.add(disco);
+add(new THREE.IcosahedronGeometry(0.2, 1), mat(0xdddddd, { metalness: 1, roughness: 0.15, flatShading: true }), 0, 0, 0, disco);
+cyl(0.008, 0.008, 0.3, 0x666666, STAGE.x - 0.3, TRUSS.y - 0.15, STAGE.z, F3);
+const RAINBOW = [0xff1744, 0xff9100, 0xffea00, 0x00e676, 0x00b0ff, 0x2979ff, 0xd500f9];
+const discoBeams = RAINBOW.map((c, i) => {
+  const b = add(beamGeo(0.02, 0.32, 4.2), additive(c, 0.32, { map: beamTex }), 0, 0, 0, disco);
+  b.rotation.order = 'YXZ';
+  b.rotation.y = (i / 7) * Math.PI * 2;
+  b.rotation.x = 0.75; // nghiêng xuống ~45°
+  return b;
+});
+// Laser quét: hộp laser trên thanh sau, 8 tia mảnh quét ngang qua khán giả
+const laserBox = box(0.3, 0.14, 0.3, 0x111111, TRUSS.back, TRUSS.y + 0.14, STAGE.z, F3);
+const laserFrom = new THREE.Vector3(TRUSS.back - 0.15, TRUSS.y + 0.14, STAGE.z);
+const lasers = Array.from({ length: 8 }, () => add(beamGeo(0.012, 0.012, 16), additive(0x00ff66, 0.85), laserFrom.x, laserFrom.y, laserFrom.z, F3));
+// Đèn chớp (strobe): chớp nhẹ 2 lần/giây lúc bắn pháo điện, không chớp nhanh hơn để khỏi chói mắt
+const strobe = pointLight(F3, 0xffffff, 0, 10, STAGE.x - 0.5, TRUSS.y - 0.3, STAGE.z);
+box(0.3, 0.1, 0.12, 0xeeeeee, TRUSS.front, TRUSS.y + 0.12, STAGE.z + 1.2, F3);
+
+// Màn LED: hai tấm hai bên màn chiếu và băng LED trên giàn trước, vẽ hiệu ứng động
+function ledPanel(w, h, cw, ch, x, y, z, rotY) {
+  const tex = canvasTexture(cw, ch, (g) => { g.fillStyle = '#000'; g.fillRect(0, 0, cw, ch); });
+  tex.magFilter = THREE.NearestFilter;
+  const m = add(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, fog: false }), x, y, z, F3);
+  m.rotation.y = rotY;
+  return { tex, g: tex.image.getContext('2d'), w: cw, h: ch };
+}
+const ledSides = [-1, 1].map((s) => {
+  box(0.05, 1.7, 0.86, 0x111111, STAGE.x + 1.74, 1.75, STAGE.z + s * 1.75, F3);
+  return ledPanel(0.8, 1.6, 24, 48, STAGE.x + 1.7, 1.75, STAGE.z + s * 1.75, -Math.PI / 2);
+});
+box(0.06, 0.36, TRUSS.z1 - TRUSS.z0 - 0.3, 0x111111, TRUSS.front - 0.04, TRUSS.y + 0.3, STAGE.z, F3);
+const ledTop = ledPanel(TRUSS.z1 - TRUSS.z0 - 0.4, 0.3, 160, 12, TRUSS.front - 0.08, TRUSS.y + 0.3, STAGE.z, -Math.PI / 2);
+const LED_TEXT = '★ BƠI HIA DỨT CẠN ★ KARAOKE ★ DZÔ ★ ';
+function drawLeds(t, level) {
+  const hue = (t * 40) % 360;
+  for (const [k, p] of ledSides.entries()) {
+    const { g, w, h } = p;
+    g.fillStyle = '#000';
+    g.fillRect(0, 0, w, h);
+    for (let x = 0; x < w; x += 3) {
+      // cột sóng nhạc nhảy theo nhịp, hai tấm lệch nhau
+      const v = level * (0.35 + 0.65 * Math.abs(Math.sin(t * 3.1 + x * 0.45 + k * 1.7) * Math.sin(t * 1.7 + x * 0.2)));
+      const bar = Math.round(v * h);
+      for (let y = 0; y < bar; y += 3) {
+        g.fillStyle = `hsl(${(hue + y * 4 + k * 120) % 360} 100% ${45 + (y / h) * 20}%)`;
+        g.fillRect(x, h - y - 2, 2, 2);
+      }
+    }
+    p.tex.needsUpdate = true;
+  }
+  const { g, w, h } = ledTop;
+  g.fillStyle = '#000';
+  g.fillRect(0, 0, w, h);
+  g.font = 'bold 11px sans-serif';
+  g.textBaseline = 'middle';
+  g.fillStyle = level ? `hsl(${hue} 100% 60%)` : '#ff4081';
+  const tw = g.measureText(LED_TEXT).width, off = -((t * 30) % tw);
+  for (let x = off; x < w; x += tw) g.fillText(LED_TEXT, x, h / 2 + 1);
+  ledTop.tex.needsUpdate = true;
+}
+drawLeds(0, 0);
+
+// Hạt: ảnh tròn mờ dùng chung cho khói, tia pháo, bong bóng
+const dotTex = canvasTexture(64, 64, (g, w) => {
+  const gr = g.createRadialGradient(w / 2, w / 2, 0, w / 2, w / 2, w / 2);
+  gr.addColorStop(0, '#fff');
+  gr.addColorStop(0.4, 'rgba(255,255,255,.6)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, w, w);
+});
+const bubbleTex = canvasTexture(64, 64, (g, w) => {
+  const gr = g.createRadialGradient(w / 2, w / 2, w * 0.3, w / 2, w / 2, w / 2);
+  gr.addColorStop(0, 'rgba(255,255,255,0.05)');
+  gr.addColorStop(0.85, 'rgba(200,240,255,0.55)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, w, w);
+  g.fillStyle = 'rgba(255,255,255,.9)';
+  g.beginPath();
+  g.arc(w * 0.36, w * 0.34, w * 0.07, 0, Math.PI * 2);
+  g.fill();
+});
+function particles(n, tex, size, blending, color = 0xffffff) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3).fill(-999), 3));
+  const pts = new THREE.Points(geo, new THREE.PointsMaterial({ size, map: tex, color, transparent: true, depthWrite: false, blending, fog: false }));
+  pts.frustumCulled = false;
+  F3.add(pts);
+  return { pts, pos: geo.attributes.position, vel: new Float32Array(n * 3), life: new Float32Array(n), n };
+}
+// Máy khói: các mảng khói to, bò sát sàn sân khấu rồi lan ra phía khán giả
+const SMOKE_N = 26;
+const fxSmoke = Array.from({ length: SMOKE_N }, () => {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTex, color: 0xd8d0ff, transparent: true, opacity: 0, depthWrite: false, fog: false }));
+  s.userData = { life: 0, max: 1, vx: 0, vz: 0 };
+  F3.add(s);
+  return s;
+});
+box(0.45, 0.22, 0.3, 0x263238, STAGE.x + 1.2, 0.31, STAGE.z - 2.2, F3); // máy khói đặt góc sân khấu
+// Máy bắn pháo điện: hai bệ ở mép trước sân khấu
+const SPARK_N = 160;
+const fxSparks = particles(SPARK_N, dotTex, 0.09, THREE.AdditiveBlending, 0xffc46b);
+const sparkGuns = [TRUSS.z0 + 0.3, TRUSS.z1 - 0.3].map((z) => {
+  box(0.3, 0.16, 0.3, 0x212121, STAGE.x - 1.35, 0.28, z, F3);
+  return new THREE.Vector3(STAGE.x - 1.35, 0.38, z);
+});
+// Máy bong bóng trên góc giàn, thổi bong bóng bay về phía khán giả
+const BUBBLE_N = 40;
+const fxBubbles = particles(BUBBLE_N, bubbleTex, 0.16, THREE.NormalBlending);
+const fxBubbleGun = new THREE.Vector3(TRUSS.front, TRUSS.y - 0.25, TRUSS.z1 - 0.2);
+box(0.3, 0.2, 0.3, 0x0277bd, fxBubbleGun.x, fxBubbleGun.y + 0.05, fxBubbleGun.z, F3);
+
+const fxColor = new THREE.Color(), fxTo = new THREE.Vector3();
+let sparkI = 0, fxBubbleI = 0;
+function updateStageFx(dt, t) {
+  const live = !!mic.singer;
+  FX.on += ((live ? 1 : 0) - FX.on) * Math.min(1, dt * 2); // bật/tắt dần
+  const on = FX.on, visible = floors[STAGE.floor].visible;
+  const beat = Math.exp(-((t * 118 / 60) % 1) * 5); // nhịp giả, 1 ngay đầu phách rồi tắt dần
+  const hue = (t * 0.08) % 1;
+  // Bài mới bắt đầu: bắn pháo điện 5 giây, sau đó cứ ~25 giây bắn một đợt
+  if (live && mic.startAt !== FX.lastStart) {
+    FX.lastStart = mic.startAt;
+    FX.burstUntil = t + 5;
+    FX.nextBurst = t + 25;
+  } else if (live && t > FX.nextBurst) {
+    FX.burstUntil = t + 3;
+    FX.nextBurst = t + 22 + Math.random() * 8;
+  }
+  const bursting = live && t < FX.burstUntil;
+
+  stageLight.intensity = on * (5 + beat * 6);
+  stageLight.color.setHSL(hue, 1, 0.55);
+  spot.intensity = on * 30;
+  spotBeam.visible = on > 0.05;
+  spotBeam.material.opacity = 0.12 * on;
+  strobe.intensity = bursting && (t * 2) % 1 < 0.06 ? 25 : 0;
+  if (!visible || on < 0.01) {
+    for (const m of movers) m.beam.visible = false;
+    for (const l of lasers) l.visible = false;
+    disco.visible = true;
+    discoBeams.forEach((b) => (b.visible = false));
+    if (FX.ledT > 0) { drawLeds(t, 0); FX.ledT = 0; }
+    fxSparks.pts.visible = fxBubbles.pts.visible = false;
+    fxSmoke.forEach((s) => (s.visible = false));
+    return;
+  }
+  // Moving Head: mỗi đèn vẽ hình số 8 riêng, đổi màu lệch pha
+  for (const m of movers) {
+    const k = m.i;
+    fxTo.set(STAGE.x - 4 - 2.5 * Math.sin(t * 0.6 + k), 3 + 3.2 * Math.sin(t * 0.8 + k * 1.3), STAGE.z + 5 * Math.sin(t * 0.45 + k * 0.9));
+    aimBeam(m.beam, m.from, fxTo);
+    m.beam.visible = true;
+    m.beam.material.color.setHSL((hue + k * 0.25) % 1, 1, 0.5);
+    m.beam.material.opacity = (0.16 + beat * 0.14) * on;
+  }
+  for (const [k, p] of pars.entries()) p.material.color.setHSL((hue + k / 6 + beat * 0.1) % 1, 1, 0.3 + beat * 0.35);
+  // Đèn quay 7 màu: quay nhanh hơn và sáng lên theo nhịp
+  disco.rotation.y += dt * (0.8 + beat * 2);
+  discoBeams.forEach((b) => {
+    b.visible = true;
+    b.material.opacity = (0.15 + beat * 0.3) * on;
+  });
+  // Laser: quạt tia quét qua lại, đổi màu đỏ / xanh lá / xanh dương
+  const lc = [0xff1744, 0x00ff66, 0x2979ff][Math.floor(t / 4) % 3];
+  lasers.forEach((l, i) => {
+    const a = (i / (lasers.length - 1) - 0.5) * 1.2 + Math.sin(t * 1.1) * 0.5;
+    const el = -0.08 + Math.sin(t * 0.7 + i * 0.4) * 0.12;
+    fxTo.set(laserFrom.x - Math.cos(a) * 10, laserFrom.y + el * 10, laserFrom.z + Math.sin(a) * 10);
+    aimBeam(l, laserFrom, fxTo);
+    l.visible = true;
+    l.material.color.setHex(lc);
+    l.material.opacity = 0.75 * on;
+  });
+  // Màn LED: vẽ lại ~12 lần/giây là đủ mượt
+  FX.ledT += dt;
+  if (FX.ledT > 0.08) { drawLeds(t, on * (0.4 + beat * 0.6)); FX.ledT = 0.0001; }
+
+  // Khói
+  const smokeN = settings.quality === 'high' ? SMOKE_N : 12;
+  fxSmoke.forEach((s, i) => {
+    const u = s.userData;
+    s.visible = i < smokeN;
+    if (!s.visible) return;
+    u.life += dt;
+    if (u.life > u.max) {
+      if (!live) { s.material.opacity = 0; return; }
+      u.life = 0;
+      u.max = 5 + Math.random() * 4;
+      u.vx = -(0.25 + Math.random() * 0.35);
+      u.vz = (Math.random() - 0.5) * 0.4;
+      s.position.set(STAGE.x + 1.1 - Math.random() * 0.8, 0.35, STAGE.z - 2 + Math.random() * 4);
+    }
+    const k = u.life / u.max;
+    s.position.x += u.vx * dt;
+    s.position.z += u.vz * dt;
+    s.position.y += dt * 0.08;
+    s.scale.setScalar(0.8 + k * 2.4);
+    s.material.opacity = Math.sin(Math.PI * k) * 0.2 * on;
+    s.material.color.copy(fxColor.setHSL(hue, 0.4, 0.8));
+  });
+
+  // Pháo điện: phun tia vàng lên cao rồi rơi xuống
+  fxSparks.pts.visible = true;
+  const sp = fxSparks.pos.array;
+  if (bursting) {
+    const spawn = Math.min(SPARK_N, Math.round(dt * (settings.quality === 'high' ? 220 : 110)));
+    for (let s = 0; s < spawn; s++) {
+      const gun = sparkGuns[s % 2], i = sparkI = (sparkI + 1) % SPARK_N;
+      sp[i * 3] = gun.x; sp[i * 3 + 1] = gun.y; sp[i * 3 + 2] = gun.z;
+      fxSparks.vel[i * 3] = (Math.random() - 0.5) * 0.7;
+      fxSparks.vel[i * 3 + 1] = 4.2 + Math.random() * 1.6;
+      fxSparks.vel[i * 3 + 2] = (Math.random() - 0.5) * 0.7;
+      fxSparks.life[i] = 0.9 + Math.random() * 0.4;
+    }
+  }
+  for (let i = 0; i < SPARK_N; i++) {
+    if (fxSparks.life[i] <= 0) { sp[i * 3 + 1] = -999; continue; }
+    fxSparks.life[i] -= dt;
+    fxSparks.vel[i * 3 + 1] -= 7 * dt;
+    sp[i * 3] += fxSparks.vel[i * 3] * dt;
+    sp[i * 3 + 1] += fxSparks.vel[i * 3 + 1] * dt;
+    sp[i * 3 + 2] += fxSparks.vel[i * 3 + 2] * dt;
+  }
+  fxSparks.pos.needsUpdate = true;
+
+  // Bong bóng: thổi ra đều, bay chậm về phía khán giả, lắc lư rồi vỡ
+  fxBubbles.pts.visible = true;
+  const bp = fxBubbles.pos.array;
+  if (live && Math.random() < dt * 6) {
+    const i = fxBubbleI = (fxBubbleI + 1) % BUBBLE_N;
+    bp[i * 3] = fxBubbleGun.x; bp[i * 3 + 1] = fxBubbleGun.y; bp[i * 3 + 2] = fxBubbleGun.z;
+    fxBubbles.vel[i * 3] = -(0.5 + Math.random() * 0.6);
+    fxBubbles.vel[i * 3 + 1] = -0.05 + Math.random() * 0.15;
+    fxBubbles.vel[i * 3 + 2] = -(0.2 + Math.random() * 0.6);
+    fxBubbles.life[i] = 4 + Math.random() * 3;
+  }
+  for (let i = 0; i < BUBBLE_N; i++) {
+    if (fxBubbles.life[i] <= 0) { bp[i * 3 + 1] = -999; continue; }
+    fxBubbles.life[i] -= dt;
+    bp[i * 3] += fxBubbles.vel[i * 3] * dt;
+    bp[i * 3 + 1] = Math.max(0.3, bp[i * 3 + 1] + fxBubbles.vel[i * 3 + 1] * dt + Math.sin(t * 3 + i) * 0.004);
+    bp[i * 3 + 2] += (fxBubbles.vel[i * 3 + 2] + Math.sin(t * 2 + i * 1.7) * 0.25) * dt;
+  }
+  fxBubbles.pos.needsUpdate = true;
+}
+
 // ---------- Bàn & ghế ----------
 const glassMat = mat(0x1d6b35, { roughness: 0.15, metalness: 0.1 });
 const STOOL = { 'Vỉa hè': 0xd62828, 'Trong nhà': 0xd62828, 'Phòng riêng': 0x6d4c41, 'Sân thượng': 0x1e88e5 };
@@ -2462,7 +2773,10 @@ function startAmbience() {
 
 // Nhạc karaoke: giai điệu sinh ngẫu nhiên theo "song" seed, ai trong quán cũng nghe cùng một bài.
 let songNodes = [];
+let songTimer = null;
 function stopSong() {
+  clearInterval(songTimer);
+  songTimer = null;
   songNodes.forEach((n) => { try { n.stop(); } catch {} });
   songNodes = [];
 }
@@ -2471,7 +2785,7 @@ function playSong(seed, startAtServer) {
   const a = ac();
   let s = seed + 7;
   const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
-  const BEAT = 0.5, BARS = SONG_MS / 1000 / (BEAT * 4);
+  const BEAT = 0.5, BARS = Math.floor(SONG_MS / 1000 / (BEAT * 4));
   const prog = [0, 7, 9, 5]; // I V vi IV
   const penta = [0, 2, 4, 7, 9, 12, 14];
   const offset = (serverNow() - startAtServer) / 1000; // >0 nếu vào muộn
@@ -2488,9 +2802,18 @@ function playSong(seed, startAtServer) {
     o.connect(g).connect(out('karaoke'));
     o.start(st);
     o.stop(start + dur + 0.05);
+    o.onended = () => { const i = songNodes.indexOf(o); if (i >= 0) songNodes.splice(i, 1); };
     songNodes.push(o);
   };
-  for (let bar = 0; bar < BARS; bar++) {
+  // Bài dài nên chỉ tạo nốt trước vài giây (mỗi giây lên lịch tiếp). Mỗi ô nhịp có hạt giống riêng
+  // để ai vào giữa bài cũng nghe đúng giai điệu như người khác.
+  let bar = Math.max(0, Math.floor(offset / (4 * BEAT)));
+  const pump = () => {
+    for (; bar < BARS && t0 + bar * 4 * BEAT < a.currentTime + 4; bar++) scheduleBar(bar);
+    if (bar >= BARS) { clearInterval(songTimer); songTimer = null; }
+  };
+  const scheduleBar = (bar) => {
+    s = seed * 1000 + bar + 7;
     const root = prog[bar % 4], bt = t0 + bar * 4 * BEAT;
     note(43 + root, bt, BEAT * 3.8, 'triangle', 0.12);
     for (let b = 0; b < 4; b++) {
@@ -2502,7 +2825,9 @@ function playSong(seed, startAtServer) {
       const len = rnd() < 0.3 ? BEAT : BEAT / 2;
       note(67 + root % 5 + penta[Math.floor(rnd() * penta.length)], bt + (e * BEAT) / 2, len * 0.95, 'sawtooth', 0.035);
     }
-  }
+  };
+  pump();
+  songTimer = setInterval(pump, 1000);
 }
 
 // ================= TV karaoke (YouTube) =================
@@ -2521,7 +2846,7 @@ function loadYT() {
   return ytReady;
 }
 
-const tv = { player: null, ready: false, yt: null, startAt: 0, failed: false, local: false, localMute: false, fallbackTimer: null, stuck: 0 };
+const tv = { player: null, ready: false, yt: null, startAt: 0, failed: false, local: false, localMute: false, fallbackTimer: null, stuck: 0, durationSent: "" };
 
 // Bài có file nhạc riêng trong public/music (chủ quán đã mua bản quyền): phát file thay cho video YouTube cùng ID.
 // Không tải được file (thiếu file, mất mạng) thì quay về video YouTube. Phát bằng Web Audio để khớp giờ server
@@ -2601,6 +2926,12 @@ async function playVideo(track, startAt) {
         onStateChange: (e) => {
           // Video hết thì người hát trả mic cho người tiếp theo (phát từ file thì startLocal lo).
           if (e.data === 0 && mic.singer === myId && tv.yt && !tv.local) send({ t: 'mic-leave' });
+          // Video bắt đầu chạy: người hát báo độ dài để lượt hát kéo dài đúng hết bài.
+          const dur = e.data === 1 && mic.singer === myId && tv.yt && !tv.local ? tv.player.getDuration() : 0;
+          if (dur > 0 && tv.durationSent !== `${tv.yt}:${tv.startAt}`) {
+            tv.durationSent = `${tv.yt}:${tv.startAt}`;
+            send({ t: 'mic-duration', yt: tv.yt, sec: Math.round(dur) });
+          }
         },
         onError: videoFailed,
       },
@@ -3276,7 +3607,6 @@ function setMic(m) {
     stopSong();
     stopVideo();
   }
-  stageLight.intensity = mic.singer ? 8 : 0;
   applyVolumes(); // có người hát thì tắt nhạc nền
   if (!mic.singer) for (const a of allActors()) a.dancing = false;
   renderMicBar();
@@ -4277,7 +4607,7 @@ function setSceneDay(k) {
   });
   // Đèn trong quán vẫn bật nhưng ban ngày dịu hơn (trừ đèn sân khấu và lửa bếp, tự chỉnh mỗi khung hình)
   scene.traverse((o) => {
-    if (!o.isPointLight || o === stageLight || o === stoveLight) return;
+    if (!o.isPointLight || o === stageLight || o === strobe || o === stoveLight) return;
     o.userData.base ??= o.intensity;
     o.intensity = o.userData.base * lerp(1, 0.4, k);
   });
@@ -4965,6 +5295,7 @@ function loop() {
     meA._sp = Math.hypot(meA.x - px, meA.z - pz) / Math.max(dt, 1e-4);
   }
   updateWorld(dt, t);
+  updateStageFx(dt, t);
   for (const a of [...allActors(), ...npcs]) updateActor(a, dt, t);
   if (state.started) {
     updateChatter(dt);
@@ -4988,4 +5319,4 @@ function loop() {
 loop();
 
 // Dùng cho kiểm thử trong console
-window.__nhau = { state, openSongPicker, rideElevator, cam, audioInfo: () => ({ bgmStep: BGM.step, music: buses.music?.gain.value, karaoke: buses.karaoke?.gain.value, video: tv.player?.getVolume?.(), ctx: audio?.state }), get me() { return meA; }, walkTo, findPath, get localPlaying() { return !!local.src && { t: +(audio.currentTime - local.at).toFixed(1), dur: +local.buf.duration.toFixed(1), gain: +local.gain.gain.value.toFixed(2) }; }, remotes, TABLES, send, pour, cheers, emote, get mic() { return mic; }, tv, screenVideoEl, local, get audio() { return audio; }, DZO };
+window.__nhau = { state, openSongPicker, FX, rideElevator, cam, audioInfo: () => ({ bgmStep: BGM.step, music: buses.music?.gain.value, karaoke: buses.karaoke?.gain.value, video: tv.player?.getVolume?.(), ctx: audio?.state }), get me() { return meA; }, walkTo, findPath, get localPlaying() { return !!local.src && { t: +(audio.currentTime - local.at).toFixed(1), dur: +local.buf.duration.toFixed(1), gain: +local.gain.gain.value.toFixed(2) }; }, remotes, TABLES, send, pour, cheers, emote, get mic() { return mic; }, tv, screenVideoEl, local, get audio() { return audio; }, DZO };

@@ -137,8 +137,10 @@ export const ACTS = ['cheers', 'pour', 'wave', 'clap', 'water', 'offer', 'dance'
 export const SHIRTS = [0x2e86de, 0xe84393, 0xf6b93b, 0x6ab04c, 0xf5f5f5, 0x222222, 0x8e44ad, 0xe55039];
 export const HAIRS = ['Tóc ngắn', 'Tóc dài', 'Hói'];
 
-export const SONG_MS = 24000; // độ dài một lượt hát với beat tự chế
-export const MAX_SONG_MS = 7 * 60 * 1000; // lượt hát theo video YouTube dài tối đa 7 phút
+export const SONG_MS = 3.5 * 60 * 1000; // độ dài một lượt hát với beat tự chế, bằng một bài bình thường
+// Video YouTube hát hết bài: người hát báo độ dài video cho server. Đây là mức trần (chặn liên khúc dài cả tiếng)
+// và cũng là thời hạn tạm trong lúc chưa biết độ dài video.
+export const MAX_SONG_MS = 15 * 60 * 1000;
 export const MIC_DELAY_MS = 1500;
 export const ROUND_COOLDOWN_MS = 60000;
 export const MAX_DISHES = 8;

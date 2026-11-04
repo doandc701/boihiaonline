@@ -248,6 +248,12 @@ function startTrack(room) {
   // Với video, người hát báo xong bài (mic-leave); đây chỉ là giới hạn trên.
   mic.endsAt = mic.startAt + (mic.track.yt ? MAX_SONG_MS : SONG_MS);
   mic.song = Math.floor(Math.random() * 1000);
+  armMicTimer(room);
+}
+
+// Hẹn giờ kết thúc lượt hát theo mic.endsAt (đặt lại khi biết độ dài thật của video).
+function armMicTimer(room) {
+  const mic = room.mic;
   clearTimeout(room.micTimer);
   room.micTimer = setTimeout(() => {
     mic.singer = null;
@@ -343,6 +349,15 @@ function handle(room, p, m) {
       if (!cooldown(p, 'mic', 3000)) { send(p.ws, { t: 'notice', msg: 'Đợi chút rồi chọn bài lại nhé' }); return; }
       joinMic(room, p, m).catch((e) => console.error('joinMic', e));
       break;
+    case 'mic-duration': {
+      // Người hát báo độ dài video đang phát: lượt hát kéo dài đúng hết bài (tối đa MAX_SONG_MS).
+      const mic = room.mic, sec = num(m.sec);
+      if (mic.singer !== p.id || !mic.track?.yt || m.yt !== mic.track.yt || sec === null || !cooldown(p, 'mic-duration', 1000)) return;
+      mic.endsAt = mic.startAt + Math.min(Math.max(sec, 10) * 1000 + 5000, MAX_SONG_MS);
+      armMicTimer(room);
+      broadcast(room, micState(room));
+      break;
+    }
     case 'mic-leave':
       if (cooldown(p, 'mic-leave', 500)) removeFromMic(room, p.id);
       break;
