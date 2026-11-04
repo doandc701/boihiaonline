@@ -433,6 +433,13 @@ function removeFromMic(room, id) {
 
 function handle(room, p, m) {
   switch (m.t) {
+    case 'clock': {
+      // Đo giờ: máy khách gửi giờ của nó (c), server trả kèm giờ server (s) để máy khách tính độ lệch đồng hồ
+      // (trừ nửa thời gian đi về). Dùng để mọi người nghe bài karaoke đúng cùng một chỗ.
+      if (typeof m.c !== 'number' || !cooldown(p, 'clock', 150)) return;
+      send(p.ws, { t: 'clock', c: m.c, s: Date.now() });
+      break;
+    }
     case 'move': {
       const d = num(m.d);
       if (d !== null) p.d = clamp(Math.round(d), 0, 100);

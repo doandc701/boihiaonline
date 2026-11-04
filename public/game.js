@@ -86,10 +86,21 @@ function fitCamera() {
   camera.updateProjectionMatrix();
 }
 fitCamera();
+// Góc nhìn lúc mới vào: đứng sau lưng, thấp ngang tầm mắt, lùi đủ xa để thấy trọn mặt tiền và biển hiệu quán.
+// Màn hình hẹp (điện thoại dọc) thì góc ngang hẹp nên lùi xa hơn; màn hình rộng giữ 7 m.
+const START_VIEW = { pitch: 0.14, width: 10, ahead: 3.6 }; // width: bề ngang mặt tiền cần thấy; ahead: từ nhân vật tới mặt tiền
+let atStartView = false;
+function startView() {
+  const half = Math.atan(Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * camera.aspect);
+  const dist = START_VIEW.width / 2 / Math.tan(half) - START_VIEW.ahead;
+  Object.assign(cam, { yaw: 0, pitch: START_VIEW.pitch, dist: clamp(dist, 7, 9) });
+  atStartView = true;
+}
 addEventListener('resize', () => {
   fitCamera();
   renderer.setSize(innerWidth, innerHeight);
   cssRenderer.setSize(innerWidth, innerHeight);
+  if (atStartView) startView(); // xoay ngang/dọc khi chưa chỉnh camera thì tính lại cho vừa
 });
 
 // ---------- Hàm dựng hình ----------
@@ -3520,7 +3531,8 @@ function videoFailed() {
 function syncLocal() {
   if (!local.src || !local.gain) return;
   const a = ac(), elapsed = (serverNow() - tv.startAt) / 1000;
-  if (elapsed < local.buf.duration && Math.abs(a.currentTime - local.at - elapsed) > 2.5) startLocal(elapsed);
+  // Phát từ file thì khớp được rất sát (đổi chỗ phát gần như tức thì), nên lệch quá 0,3 giây là chỉnh.
+  if (elapsed < local.buf.duration && Math.abs(a.currentTime - local.at - elapsed) > 0.3) startLocal(elapsed);
   const off = tv.localMute || muted || (document.hidden && !settings.bgPlay);
   local.gain.gain.setTargetAtTime(off ? 0 : (settings.karaoke / 100) * karaokeLevel(), a.currentTime, 0.3);
 }
@@ -3545,7 +3557,11 @@ function syncVideo() {
     tv.stuck = 0;
     showTvPlay(false);
   }
-  if (st === 1 && Math.abs(p.getCurrentTime() - elapsed) > 2.5) p.seekTo(elapsed, true);
+  // Lệch quá 1 giây thì kéo về đúng chỗ; sau mỗi lần kéo chờ 4 giây cho video tải xong rồi mới đo lại.
+  if (st === 1 && performance.now() - (tv.seekAt || 0) > 4000 && Math.abs(p.getCurrentTime() - elapsed) > 1) {
+    tv.seekAt = performance.now();
+    p.seekTo(elapsed + 0.3, true); // bù thời gian video tải lại sau khi kéo
+  }
   const level = karaokeLevel();
   p.setVolume(Math.round(settings.karaoke * level));
   if (!level || tv.localMute || muted || settings.karaoke === 0 || (document.hidden && !settings.bgPlay)) p.mute();
@@ -3732,6 +3748,21 @@ function actorById(id) {
 // sameOrigin: trang có được chính server game phục vụ không (null = chưa biết, loadRooms sẽ xác định).
 const net = { ws: null, online: false, offset: 0, lastSent: 0, lastKey: '', sameOrigin: null };
 const serverNow = () => Date.now() + net.offset;
+// Đo độ lệch đồng hồ với server: gửi vài mẫu, lấy mẫu đi về nhanh nhất (ít bị trễ mạng nhất),
+// cộng nửa thời gian đi về. Đo lại mỗi phút để mọi máy nghe bài karaoke cùng một chỗ.
+const clockSyncState = { best: null, timer: null };
+function clockSync() {
+  clockSyncState.best = null;
+  for (let i = 0; i < 5; i++) setTimeout(() => send({ t: 'clock', c: Date.now() }), i * 250);
+  clearTimeout(clockSyncState.timer);
+  clockSyncState.timer = setTimeout(clockSync, 60000);
+}
+function onClock(m) {
+  const now = Date.now(), rtt = now - m.c;
+  if (rtt < 0 || rtt > 5000 || (clockSyncState.best && rtt >= clockSyncState.best.rtt)) return;
+  clockSyncState.best = { rtt };
+  net.offset = m.s + rtt / 2 - now;
+}
 // Địa chỉ server của một cơ sở: cùng host nếu trang do server game phục vụ, không thì server riêng của cơ sở.
 function roomServer(id) {
   const own = ROOMS.find((r) => r.id === id)?.server;
@@ -3895,7 +3926,8 @@ function onMessage(m) {
       myId = m.id;
       meA.id = myId;
       chatTable = -1; // vào quán mới (hoặc kết nối lại) thì khung chat làm lại từ đầu
-      net.offset = m.now - Date.now();
+      net.offset = m.now - Date.now(); // ước lượng thô, clockSync() đo lại chính xác ngay sau đó
+      clockSync();
       lastDayK = -1;
       updateDayNight();
       // Kết nối lại (server khởi động lại, mạng chập chờn) thì danh sách cũ có thể còn người đã đi, kể cả bóng của chính mình.
@@ -4120,6 +4152,9 @@ function onMessage(m) {
     case 'pour-round':
       pourRound(m);
       break;
+    case 'clock':
+      onClock(m);
+      break;
     case 'yt-results':
       renderYouTube(m);
       break;
@@ -4182,6 +4217,7 @@ function setMic(m) {
       placeAt(meA, STAGE.singerX, STAGE.singerZ, -Math.PI / 2, STAGE.floor);
       // Camera đứng chính giữa phía khán giả, thấy cả người hát lẫn màn chiếu sau lưng.
       cam.yaw = -Math.PI / 2;
+      atStartView = false;
       cam.pitch = 0.15;
       cam.dist = Math.max(cam.dist, 4);
       toast(wasSinging ? `🎵 Đang hát: ${mic.track?.title || 'bài mới'}` : `🎤 Đến lượt bạn: ${mic.track?.title || 'hát đi nào'}!`);
@@ -4341,6 +4377,7 @@ function onSitMine() {
   state.fill = 0;
   setFill(0);
   cam.yaw = meA.yaw + Math.PI;
+  atStartView = false;
   cam.pitch = 0.5;
   cam.dist = Math.min(cam.dist, 3);
   const T = TABLES[meA.seat.table];
@@ -4557,6 +4594,7 @@ async function rideElevator(target) {
   await sleep(700);
   placeAt(meA, inside.x, inside.z, 0, from); // đứng trong cabin, quay mặt ra cửa
   cam.yaw = 0;
+  atStartView = false;
   await sleep(400);
   elevatorDoors[from].target = 0;
   await sleep(700);
@@ -4578,6 +4616,7 @@ async function rideElevator(target) {
   await sleep(700);
   placeAt(meA, ELEVATOR.x, ELEVATOR.doorZ + 0.7, 0, target);
   cam.yaw = 0; // camera đứng đón phía trước người vừa bước ra
+  atStartView = false;
   toast(`📍 ${FLOOR_NAMES[target]}`);
   await sleep(600);
   elevatorDoors[target].target = 0;
@@ -5558,11 +5597,12 @@ canvas.addEventListener('pointermove', (e) => {
   if (pointers.size === 2) {
     const [a, b] = [...pointers.values()];
     const d = Math.hypot(a.x - b.x, a.y - b.y);
-    if (pinchDist) cam.dist = clamp(cam.dist * (pinchDist / d), 1.6, 9);
+    if (pinchDist) { cam.dist = clamp(cam.dist * (pinchDist / d), 1.6, 9); atStartView = false; }
     pinchDist = d;
   } else if (p.moved) {
     canvas.classList.add('dragging');
     cam.yaw -= dx * 0.006;
+    atStartView = false;
     cam.pitch = clamp(cam.pitch + dy * 0.004, 0.05, 1.35);
   }
 });
@@ -5611,6 +5651,7 @@ canvas.addEventListener('pointercancel', endPointer);
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
   cam.dist = clamp(cam.dist * (e.deltaY > 0 ? 1.1 : 0.9), 1.6, 9);
+  atStartView = false;
 }, { passive: false });
 
 document.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => {
@@ -5869,6 +5910,7 @@ $('btn-enter').onclick = () => {
   meA = createActor(lookToOpts(state.look, 1), state.name, 'me');
   meA.id = myId;
   placeAt(meA, spawnSpot().x, SPAWN.z, SPAWN.yaw, 0);
+  startView();
   setFill(0);
   updateDrunk();
 
