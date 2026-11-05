@@ -100,7 +100,6 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
 .mic-icon { position: relative; }
 .mic-icon:not(.on)::after { content: ''; position: absolute; left: 22%; right: 22%; top: 50%; height: 3px; border-radius: 2px; background: #ff5252; transform: rotate(-45deg); box-shadow: 0 0 0 1.5px #1e1b3a; pointer-events: none; }
 html .mic-icon.on { --b1: #ff5a5a; --b2: #e53935; --be: #a8202a; animation: micPulse 1.2s ease-in-out infinite; }
-.voice-live { align-self: flex-start; padding: 6px 12px; border-radius: 99px; background: #e53935; color: #fff; font-weight: 700; font-size: .85rem; animation: micPulse 1.2s ease-in-out infinite; }
 @keyframes micPulse { 50% { box-shadow: 0 0 0 4px #e5393555; } }
 /* Điện thoại, chat đang thu gọn: một hàng gồm nút 💬 (và viên mic đỏ khi đang nói) */
 .chat.collapsed { flex-direction: row; align-items: center; gap: 8px; }
@@ -657,7 +656,7 @@ html .mic-icon.on { --b1: #ff5a5a; --b2: #e53935; --be: #a8202a; animation: micP
 :root { --gb-ink: #2b2452; }
 button:not([class]), button.ghost, button.big, .icon, .chip, .close-x, .seg button,
 .action-bar button, .pay-btn, .donate-btn, .boot-retry, .tv-play, .yt-search, .round, .chat-panel form button,
-.chat-toggle, .voice-live, .row-btns button {
+.chat-toggle, .row-btns button {
   --b1: #4fe06b; --b2: #2fbf4f; --be: #1d8f37; /* xanh lá: nút chính */
   background: linear-gradient(180deg, var(--b1), var(--b2));
   color: #fff; border: 2px solid var(--gb-ink);
@@ -667,11 +666,11 @@ button:not([class]), button.ghost, button.big, .icon, .chip, .close-x, .seg butt
   transition: transform .07s ease, box-shadow .07s ease, filter .15s ease;
 }
 :is(button:not([class]), button.ghost, button.big, .icon, .chip, .close-x, .seg button, .action-bar button, .pay-btn,
-.donate-btn, .boot-retry, .tv-play, .yt-search, .round, .chat-panel form button, .chat-toggle, .voice-live, .row-btns button):hover:not(:disabled) {
+.donate-btn, .boot-retry, .tv-play, .yt-search, .round, .chat-panel form button, .chat-toggle, .row-btns button):hover:not(:disabled) {
   background: linear-gradient(180deg, var(--b1), var(--b2)); filter: brightness(1.07);
 }
 :is(button:not([class]), button.ghost, button.big, .icon, .chip, .close-x, .seg button, .action-bar button, .pay-btn,
-.donate-btn, .boot-retry, .tv-play, .yt-search, .round, .chat-panel form button, .chat-toggle, .voice-live, .row-btns button):active:not(:disabled) {
+.donate-btn, .boot-retry, .tv-play, .yt-search, .round, .chat-panel form button, .chat-toggle, .row-btns button):active:not(:disabled) {
   transform: translateY(2px);
   box-shadow: inset 0 2px 0 #ffffff6b, inset 0 -2px 0 var(--be), 0 1px 0 var(--gb-ink);
 }
@@ -682,7 +681,6 @@ html .round, html .donate-btn, .ab-group:nth-of-type(1) button { --b1: #ffbf47; 
 .ab-group:nth-of-type(3) button { --b1: #56a8ff; --b2: #2f80ec; --be: #1c56b3; }                                                 /* xanh dương */
 html .icon, html .chip, html .chat-toggle, html .seg button { --b1: #5d62a3; --b2: #474b8c; --be: #30336b; }                         /* xám tím: nút phụ, chip */
 html .seg button.on, html .action-bar button.on, html .action-bar .ab-trigger.on { --b1: #4fe06b; --b2: #2fbf4f; --be: #1d8f37; background: linear-gradient(180deg, var(--b1), var(--b2)); color: #fff; } /* đang chọn */
-html .voice-live { --b1: #ff5a5a; --b2: #e53935; --be: #a8202a; }
 /* Chọn cơ sở ở màn hình đầu: thẻ khối xám tím, đang chọn xanh lá */
 html .rooms button {
   --b1: #5d62a3; --b2: #474b8c; --be: #30336b;

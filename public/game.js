@@ -4482,9 +4482,6 @@ function renderVoice() {
   micBtn.classList.toggle('hidden', !features.voice);
   micBtn.classList.toggle('on', voice.mic);
   micBtn.title = voice.mic ? `Mic đang bật (kênh ${ch}). Bấm để tắt (V)` : 'Bật mic để nói (V)';
-  const live = $('voice-live');
-  live.classList.toggle('hidden', !voice.mic || !state.started);
-  live.textContent = `🎙️ ${ch}`;
   markSpeakers();
 }
 function markSpeakers() {
@@ -4529,7 +4526,6 @@ function voiceMicOn() {
 const toggleVoiceMic = () => (voice.mic ? setVoiceMic(false) : voiceMicOn());
 $('btn-mic').onclick = () => toggleVoiceMic();
 document.querySelectorAll('[data-vmic]').forEach((b) => (b.onclick = () => (b.dataset.vmic === 'on' ? voiceMicOn() : setVoiceMic(false))));
-$('voice-live').onclick = (e) => { e.currentTarget.blur(); setVoiceMic(false); };
 // Rời bàn / đổi bàn thì ra khỏi kênh thoại của bàn cũ; lúc đó muốn nghe Bàn thì chuyển sang Cả quán.
 function voiceSeatChanged() {
   if (voice.scope === 'table' && voice.table !== meA?.seat?.table) {
