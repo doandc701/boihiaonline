@@ -157,10 +157,9 @@
     <div class="top-left">
       <button id="btn-people" class="chip">👥 <span id="people-count">1</span> người<span class="room-part"> · <span id="room-name"></span></span></button>
       <button id="btn-wallet" class="chip wallet-chip" title="Ví tiền và giỏ đồ">💰 <span id="money">1.000.000đ</span> · 🎒 <span id="bag-count">0</span><span id="debt-chip" class="hidden"> · 📒 nợ <b id="debt"></b></span></button>
-      <div class="meter">
-        <span>Độ say</span>
-        <div class="bar"><div id="drunk-bar"></div></div>
-        <span id="drunk-label">Tỉnh táo</span>
+      <div id="drunk-meter" class="drunk-meter" data-lvl="0" title="Độ say: uống nước lọc, đi WC để tỉnh lại">
+        <span class="dm-badge"><b id="drunk-ico">😊</b></span>
+        <div class="dm-bar"><div id="drunk-bar"><i class="dm-foam"></i></div><span class="dm-text"><span id="drunk-label">Tỉnh táo</span> <small id="drunk-pct">0%</small></span></div>
       </div>
       <div class="info-row"><div id="where" class="small"></div><div id="clock" class="small clock" title=""></div></div>
       <button id="btn-lock" class="chip hidden"></button>
@@ -295,13 +294,6 @@
   </div>
 
   <!-- Thanh bài đang hát; video chiếu trên màn hình sân khấu (xem stageScreen trong game.js) -->
-  <div id="tv" class="tv hidden">
-    <div class="tv-head">
-      <span id="tv-title"></span>
-      <button id="tv-sound" title="Tắt/bật tiếng bài hát">🔊</button>
-    </div>
-  </div>
-
   <div id="overlay-donate" class="overlay hidden">
     <div class="panel donate-panel">
       <button id="btn-donate-close" class="close-x" title="Đóng" aria-label="Đóng">✕</button>

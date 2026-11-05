@@ -122,7 +122,7 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
 .icon { background: var(--surface); color: var(--surface-text); border: 1px solid var(--border); width: 42px; height: 42px; padding: 0; font-size: 1.1rem; }
 .meter { display: flex; align-items: center; gap: 8px; font-size: .85rem; white-space: nowrap; }
 /* Dòng thông tin góc trên: có nền riêng để đọc rõ trên mọi cảnh 3D, cả sáng lẫn tối */
-.top-left .meter, .top-left .small:not(:empty) {
+.top-left .small:not(:empty) {
   background: var(--surface); color: var(--surface-text); padding: 3px 10px; border-radius: 99px;
   align-self: flex-start; text-shadow: none; border: 1px solid var(--border-soft);
 }
@@ -141,8 +141,33 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
 .chat-log::-webkit-scrollbar-thumb { background: #ffffff55; }
 .chat-log::-webkit-scrollbar-thumb:hover { background: #ffffff88; }
 :is(.chat-log, .panel, .panel-body, .song-list, .games-list, .bag-list, .menu-items)::-webkit-scrollbar-button { display: none; height: 0; }
-.bar { width: 120px; height: 10px; background: var(--field); border: 1px solid var(--border-soft); border-radius: 99px; overflow: hidden; }
-#drunk-bar { height: 100%; width: 0; background: linear-gradient(90deg, #6c3, var(--accent), var(--danger)); transition: width .5s; }
+/* Thanh độ say kiểu thanh kinh nghiệm game: huy hiệu ngôi sao bên trái, thanh dày viền đậm,
+   ruột là bia vàng có bọt và bong bóng, chữ viền giữa thanh. Màu chuyển theo cấp say. */
+.drunk-meter { --dm1: #9be15d; --dm2: #4caf50; --dm-glow: #8bc34a; position: relative; display: flex; align-items: center; align-self: flex-start;
+  pointer-events: auto; padding-left: 22px; filter: drop-shadow(0 2px 0 var(--gb-ink, #1e1b3a)); }
+.drunk-meter[data-lvl="1"] { --dm1: #ffe57f; --dm2: #f2a900; --dm-glow: #ffd54f; }
+.drunk-meter[data-lvl="2"] { --dm1: #ffb74d; --dm2: #ef6c00; --dm-glow: #ff9800; }
+.drunk-meter[data-lvl="3"] { --dm1: #ff8a80; --dm2: #d32f2f; --dm-glow: #ff5252; }
+.dm-badge { position: absolute; left: 0; top: 50%; z-index: 2; width: 40px; height: 40px; transform: translateY(-50%); display: grid; place-items: center;
+  background: radial-gradient(circle at 50% 35%, #fff9c4, var(--dm1) 45%, var(--dm2));
+  clip-path: polygon(50% 0, 61% 15%, 79% 9%, 79% 27%, 97% 33%, 87% 50%, 97% 67%, 79% 73%, 79% 91%, 61% 85%, 50% 100%, 39% 85%, 21% 91%, 21% 73%, 3% 67%, 13% 50%, 3% 33%, 21% 27%, 21% 9%, 39% 15%); }
+.dm-badge b { font-size: 1.15rem; line-height: 1; filter: drop-shadow(0 1px 0 #0006); }
+.dm-bar { position: relative; box-sizing: border-box; width: 170px; height: 24px; margin: 2px 0 2px 4px; padding-left: 16px; border-radius: 99px; overflow: hidden;
+  background: linear-gradient(#2a2650, #3a3570); border: 2px solid var(--gb-ink, #1e1b3a); box-shadow: inset 0 2px 4px #0008; }
+#drunk-bar { position: relative; height: 100%; width: 0; min-width: 0; border-radius: 99px 0 0 99px; transition: width .6s cubic-bezier(.3, 1.4, .5, 1), background .4s;
+  background: radial-gradient(circle at 20% 70%, #ffffff55 0 2px, transparent 3px) 0 0 / 14px 14px,
+    radial-gradient(circle at 70% 40%, #ffffff40 0 1.5px, transparent 2.5px) 0 0 / 11px 11px,
+    linear-gradient(#ffffff59, #fff0 45%), linear-gradient(90deg, var(--dm2), var(--dm1));
+  animation: dmBubbles 3s linear infinite; box-shadow: 0 0 10px var(--dm-glow); }
+.dm-foam { position: absolute; right: -3px; top: -2px; bottom: -2px; width: 7px; border-radius: 99px; background: #fffde7; box-shadow: 0 0 4px #fff; }
+#drunk-bar[style*="width: 0"] .dm-foam { display: none; }
+.dm-text { position: absolute; inset: 0 0 0 14px; display: flex; align-items: center; justify-content: center; gap: 4px; font-size: .74rem; font-weight: 800; color: #fff;
+  white-space: nowrap; text-shadow: -1px -1px 0 #1e1b3a, 1px -1px 0 #1e1b3a, -1px 1px 0 #1e1b3a, 1px 1px 0 #1e1b3a; letter-spacing: .02em; }
+.dm-text small { font-size: .68rem; opacity: .9; }
+@keyframes dmBubbles { to { background-position: 0 -14px, 0 -11px, 0 0, 0 0; } }
+.drunk-meter.pop .dm-badge { animation: dmPop .6s cubic-bezier(.2, 1.8, .4, 1); }
+@keyframes dmPop { 0% { transform: translateY(-50%) scale(.6) rotate(-20deg); } 60% { transform: translateY(-50%) scale(1.3) rotate(8deg); } 100% { transform: translateY(-50%) scale(1); } }
+@media (prefers-reduced-motion: reduce) { #drunk-bar { animation: none; } .drunk-meter.pop .dm-badge { animation: none; } }
 
 .prompt {
   position: absolute; left: 50%; bottom: calc(110px + env(safe-area-inset-bottom)); transform: translateX(-50%);
@@ -545,10 +570,6 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
 .yt-head button { padding: 4px 10px; font-size: .8rem; background: var(--field); color: var(--text); }
 
 /* TV karaoke */
-.tv { position: fixed; right: max(12px, env(safe-area-inset-right)); top: calc(64px + env(safe-area-inset-top)); width: min(320px, 60vw); border: 2px solid #e040fb88; border-radius: 12px; overflow: hidden; z-index: 3; box-shadow: 0 8px 24px #0008; }
-.tv-head { display: flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; background: #3a0d4a; color: #fff; font-size: .82rem; }
-.tv-head span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tv-head button { background: transparent; color: #fff; padding: 2px 8px; font-weight: 400; }
 /* Lớp CSS3D nằm dưới canvas, chỉ lộ ra qua "lỗ" màn chiếu trong cảnh 3D */
 .screen3d { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
 .screen3d .screen-video { width: 960px; height: 540px; background: #000; backface-visibility: hidden; }
@@ -579,17 +600,19 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
   .chip { padding: 5px 10px; font-size: .82rem; }
   .icon { width: 38px; height: 38px; font-size: 1rem; }
   .top-right { gap: 6px; }
-  .bar { width: 60px; }
+  .dm-bar { width: 132px; height: 22px; }
   .meter { gap: 6px; }
-  /* thanh mic trải ngang dưới cột thông tin; tên bài dài thì cắt "…", nút không xuống dòng */
-  .mic-bar { top: calc(120px + env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left)); right: max(12px, env(safe-area-inset-right)); transform: none; width: auto; max-width: none; font-size: .78rem; gap: 6px; padding: 5px 8px; }
+  /* thanh mic trải ngang ở dưới, ngay trên thanh nút; tên bài dài thì cắt "…", nút không xuống dòng.
+     Khung chat và gợi ý "E đang hát…" đẩy lên trên thanh mic */
+  body:has(#mic-bar:not(.hidden)) .chat { bottom: calc(140px + env(safe-area-inset-bottom)); }
+  body:has(#mic-bar:not(.hidden)) .prompt { bottom: calc(196px + env(safe-area-inset-bottom)); }
+  .mic-bar { top: auto; bottom: calc(92px + env(safe-area-inset-bottom)); left: max(12px, env(safe-area-inset-left)); right: max(12px, env(safe-area-inset-right)); transform: none; width: auto; max-width: none; font-size: .78rem; gap: 6px; padding: 5px 8px; }
   .mic-bar span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mic-bar button { padding: 5px 8px; font-size: .75rem; }
-  /* thông báo nằm dưới thanh mic, khỏi che cột thông tin và nút */
+  /* thông báo nằm dưới cột thông tin, khỏi che nút */
   #toast { top: calc(168px + env(safe-area-inset-top)); }
-  .tv-play { top: calc(166px + env(safe-area-inset-top)); }
+  .tv-play { top: calc(120px + env(safe-area-inset-top)); }
   .side { top: 140px; width: min(260px, calc(100% - 24px)); }
-  .tv { top: auto; bottom: calc(150px + env(safe-area-inset-bottom)); width: min(320px, calc(100% - 24px)); }
   }
 /* Thiết bị cảm ứng: không có bàn phím nên ẩn phím tắt */
 @media (pointer: coarse) {
@@ -599,7 +622,8 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
   .action-bar span { display: none; }
   #where { display: none; }
   .meter { font-size: .75rem; }
-  .bar { width: 44px; }
+  .dm-bar { width: 108px; }
+  .dm-text small { display: none; }
   .room-part { display: none; } /* chừa chỗ cho hàng nút góc phải */
 }
 /* Điện thoại xoay ngang: màn hình thấp */
@@ -608,7 +632,8 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
   .top-left { gap: 3px; font-size: .78rem; }
   .chip { padding: 4px 10px; font-size: .8rem; }
   .icon { width: 36px; height: 36px; font-size: .95rem; }
-  .bar { width: 70px; }
+  .dm-bar { width: 120px; height: 20px; }
+  .dm-badge { width: 32px; height: 32px; }
   .panel { padding: 12px 16px; }
   .panel h1 { font-size: 1.4rem; }
   .start-grid { grid-template-columns: 180px 1fr; }
@@ -618,7 +643,6 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
   .chat { bottom: calc(64px + env(safe-area-inset-bottom)); width: min(320px, 45%); right: auto; }
   .chat-log { height: 60px; }
   .prompt { bottom: calc(66px + env(safe-area-inset-bottom)); }
-  .tv { width: min(280px, 40vw); top: calc(56px + env(safe-area-inset-top)); bottom: auto; }
   .mic-bar { top: max(8px, env(safe-area-inset-top)); }
 }
 

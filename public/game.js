@@ -44,10 +44,10 @@ const LINES = {
 const ACT_EMOJI = { cheers: '🥂 Dzô!', pour: '🍺', wave: '👋', clap: '👏', water: '💧' };
 
 const DRUNK_LEVELS = [
-  { at: 0, label: 'Tỉnh táo' },
-  { at: 25, label: 'Lâng lâng', msg: 'Bắt đầu thấy lâng lâng rồi đấy 😊' },
-  { at: 55, label: 'Say rồi', msg: 'Mặt đỏ tưng bừng, đi đứng loạng choạng 🥴' },
-  { at: 85, label: 'Sắp gục', msg: 'Sắp gục rồi! Uống nước lọc đi (6) 💧' },
+  { at: 0, label: 'Tỉnh táo', ico: '😊' },
+  { at: 25, label: 'Lâng lâng', ico: '😄', msg: 'Bắt đầu thấy lâng lâng rồi đấy 😊' },
+  { at: 55, label: 'Say rồi', ico: '🥴', msg: 'Mặt đỏ tưng bừng, đi đứng loạng choạng 🥴' },
+  { at: 85, label: 'Sắp gục', ico: '😵', msg: 'Sắp gục rồi! Uống nước lọc đi (6) 💧' },
 ];
 
 // ================= Tiện ích =================
@@ -3420,7 +3420,7 @@ function loadYT() {
   return ytReady;
 }
 
-const tv = { player: null, ready: false, yt: null, startAt: 0, failed: false, local: false, localMute: false, fallbackTimer: null, stuck: 0, durationSent: "" };
+const tv = { player: null, ready: false, yt: null, startAt: 0, failed: false, local: false, fallbackTimer: null, stuck: 0, durationSent: "" };
 
 // Bài có file nhạc riêng trong public/music (chủ quán đã mua bản quyền): phát file thay cho video YouTube cùng ID.
 // Không tải được file (thiếu file, mất mạng) thì quay về video YouTube. Phát bằng Web Audio để khớp giờ server
@@ -3464,9 +3464,7 @@ async function playVideo(track, startAt) {
   stopSong();
   stopLocal(); // đổi bài: tắt tiếng file của bài trước (nếu bài trước phát từ file)
   clearTimeout(tv.fallbackTimer);
-  Object.assign(tv, { yt: track.yt, startAt, failed: false, local: false });
-  $('tv-title').textContent = `🎤 ${track.title}${track.by ? ' · ' + track.by : ''}`;
-  $('tv').classList.remove('hidden');
+  Object.assign(tv, { yt: track.yt, startAt, failed: false, local: false, retries: 0 });
   drawScreen(track.title, track.by);
   const buf = await localBuffer(track.yt);
   if (tv.yt !== track.yt) return; // đã đổi bài trong lúc tải
@@ -3507,7 +3505,7 @@ async function playVideo(track, startAt) {
             send({ t: 'mic-duration', yt: tv.yt, sec: Math.round(dur) });
           }
         },
-        onError: videoFailed,
+        onError: (e) => videoError(e.data),
       },
     });
   } else if (tv.ready) {
@@ -3553,10 +3551,22 @@ function stopVideo() {
   tv.local = false;
   stopLocal();
   try { tv.player?.stopVideo?.(); } catch {}
-  $('tv').classList.add('hidden');
   drawScreen('', '');
 }
 
+// YouTube báo lỗi: lỗi chặn nhúng (101, 150) thì chịu luôn; lỗi khác (mạng chập chờn, player hỏng, mã 5…)
+// thường chỉ là tạm thời, nạp lại đúng chỗ đang phát tối đa 2 lần rồi mới chuyển sang beat tự chế.
+function videoError(code) {
+  console.warn('YouTube lỗi', code, tv.yt);
+  if (!tv.yt || tv.failed) return;
+  if (code === 101 || code === 150 || (tv.retries || 0) >= 2) return videoFailed();
+  tv.retries = (tv.retries || 0) + 1;
+  const yt = tv.yt;
+  setTimeout(() => {
+    if (tv.yt !== yt || tv.failed) return;
+    try { tv.player.loadVideoById({ videoId: yt, startSeconds: Math.max(0, (serverNow() - tv.startAt) / 1000) }); } catch { videoFailed(); }
+  }, 1500);
+}
 function videoFailed() {
   if (!tv.yt || tv.failed) return;
   tv.failed = true;
@@ -3575,7 +3585,7 @@ function syncLocal() {
   const a = ac(), elapsed = (serverNow() - tv.startAt) / 1000;
   // Phát từ file thì khớp được rất sát (đổi chỗ phát gần như tức thì), nên lệch quá 0,3 giây là chỉnh.
   if (elapsed < local.buf.duration && Math.abs(a.currentTime - local.at - elapsed) > 0.3) startLocal(elapsed);
-  const off = tv.localMute || muted || (document.hidden && !settings.bgPlay);
+  const off = muted || (document.hidden && !settings.bgPlay);
   local.gain.gain.setTargetAtTime(off ? 0 : (settings.karaoke / 100) * karaokeLevel(), a.currentTime, 0.3);
 }
 
@@ -3608,16 +3618,11 @@ function syncVideo() {
   // Thang âm lượng của YouTube không tuyến tính: 12/100 nghe gần như im, trong khi file phát qua Web Audio ở 0,12 vẫn rõ.
   // Lấy căn bậc hai để bài YouTube và bài phát từ file to ngang nhau ở cùng chỗ đứng (vd. trong quán tầng 1: 12 → ~35).
   p.setVolume(Math.round(100 * Math.sqrt((settings.karaoke / 100) * level)));
-  if (!level || tv.localMute || muted || settings.karaoke === 0 || (document.hidden && !settings.bgPlay)) p.mute();
+  if (!level || muted || settings.karaoke === 0 || (document.hidden && !settings.bgPlay)) p.mute();
   else p.unMute();
 }
 setInterval(syncVideo, 1000);
 
-$('tv-sound').onclick = () => {
-  tv.localMute = !tv.localMute;
-  $('tv-sound').textContent = tv.localMute ? '🔇' : '🔊';
-  syncVideo();
-};
 
 // ---------- Chọn bài ----------
 let songGenre = 'Tất cả';
@@ -4568,6 +4573,15 @@ function updateDrunk() {
   let lvl = 0;
   DRUNK_LEVELS.forEach((l, i) => { if (state.drunk >= l.at) lvl = i; });
   $('drunk-label').textContent = DRUNK_LEVELS[lvl].label;
+  $('drunk-pct').textContent = `${Math.round(state.drunk)}%`;
+  $('drunk-ico').textContent = DRUNK_LEVELS[lvl].ico;
+  const meter = $('drunk-meter');
+  meter.dataset.lvl = lvl;
+  if (lvl !== state.drunkLevel) { // lên / xuống cấp say: huy hiệu nảy lên
+    meter.classList.remove('pop');
+    void meter.offsetWidth;
+    meter.classList.add('pop');
+  }
   if (lvl > state.drunkLevel && DRUNK_LEVELS[lvl].msg) toast(DRUNK_LEVELS[lvl].msg);
   state.drunkLevel = lvl;
 }
@@ -7087,4 +7101,4 @@ loop();
 // Dùng cho kiểm thử trong console
 window.__beachFirst = () => [...beachItems.values()][0]?.it;
 window.__bgmEl = () => bgmEl;
-window.__nhau = { state, clickDoor: (id) => goTo({ info: doors.get(id).userData.click }), doorScreen: (id) => { const v = new THREE.Vector3(); doors.get(id).getWorldPosition(v); v.project(camera); return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight }; }, popups: { openDonate, openBag, openSettings, showBill, openMenu, openPoem, askStand, invitePick, rideMenu: () => openFloorPicker("🛗 Thang máy", [0, 1, 2], rideElevator), openModal, songs: () => openSongPicker(true), games: () => tableGames.openPicker() }, lockState: () => ({ modal, paying, payPause, riding, wcBusy, busy: !!busy, passedOut: state.passedOut, fade: +($('fade').style.opacity || 0), started: state.started, fishing: modal === 'fish', cine: !!catchFx }), openSongPicker, FX, playCatch, stepCatch, get catchFx() { return catchFx; }, endCatch, showCatch, fishGame, rideElevator, cam, audioInfo: () => ({ bgmFile: bgmEl && { t: +bgmEl.currentTime.toFixed(2), paused: bgmEl.paused }, bgmStep: BGM.step, music: buses.music?.gain.value, karaoke: buses.karaoke?.gain.value, video: tv.player?.getVolume?.(), ctx: audio?.state }), get me() { return meA; }, walkTo, findPath, get localPlaying() { return !!local.src && { t: +(audio.currentTime - local.at).toFixed(1), dur: +local.buf.duration.toFixed(1), gain: +local.gain.gain.value.toFixed(2) }; }, remotes, TABLES, send, cheers, emote, get mic() { return mic; }, tv, screenVideoEl, local, get audio() { return audio; }, DZO, tabs, trader, staff };
+window.__nhau = { state, updateDrunk, clickDoor: (id) => goTo({ info: doors.get(id).userData.click }), doorScreen: (id) => { const v = new THREE.Vector3(); doors.get(id).getWorldPosition(v); v.project(camera); return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight }; }, popups: { openDonate, openBag, openSettings, showBill, openMenu, openPoem, askStand, invitePick, rideMenu: () => openFloorPicker("🛗 Thang máy", [0, 1, 2], rideElevator), openModal, songs: () => openSongPicker(true), games: () => tableGames.openPicker() }, lockState: () => ({ modal, paying, payPause, riding, wcBusy, busy: !!busy, passedOut: state.passedOut, fade: +($('fade').style.opacity || 0), started: state.started, fishing: modal === 'fish', cine: !!catchFx }), openSongPicker, FX, playCatch, stepCatch, get catchFx() { return catchFx; }, endCatch, showCatch, fishGame, rideElevator, cam, audioInfo: () => ({ bgmFile: bgmEl && { t: +bgmEl.currentTime.toFixed(2), paused: bgmEl.paused }, bgmStep: BGM.step, music: buses.music?.gain.value, karaoke: buses.karaoke?.gain.value, video: tv.player?.getVolume?.(), ctx: audio?.state }), get me() { return meA; }, walkTo, findPath, get localPlaying() { return !!local.src && { t: +(audio.currentTime - local.at).toFixed(1), dur: +local.buf.duration.toFixed(1), gain: +local.gain.gain.value.toFixed(2) }; }, remotes, TABLES, send, cheers, emote, get mic() { return mic; }, tv, screenVideoEl, local, get audio() { return audio; }, DZO, tabs, trader, staff };
