@@ -2,7 +2,7 @@
 // (chai xoay, bát xóc, bốc thăm). Kết quả do server quyết định (server/games.js); ở đây chỉ hiển thị.
 import { GAMES, GAME_KINDS, BETS, RPS, SPIN_MS } from '/shared/games.js';
 
-// ctx: { THREE, $, send, toast, speak, openModal, closeModal, modal(), fmt, escapeHtml, actorById, me(), myId(),
+// ctx: { THREE, $, send, toast, speak, playAct, openModal, closeModal, modal(), fmt, escapeHtml, actorById, me(), myId(),
 //        TABLES, seatPos, floors, serverNow, online(), penaltyDrink() }
 export function createTableGames(ctx) {
   const { THREE, $ } = ctx;
@@ -73,6 +73,8 @@ export function createTableGames(ctx) {
       const why = x.why ? ` <small class="why">(${ctx.escapeHtml(x.why)})</small>` : '';
       return `<span class="gp${res}">${STATUS[x.status] || ''} ${ctx.escapeHtml(x.name)}${ans}${pay}${why}${stopTag}</span>`;
     }).join('');
+    // Kết quả xí ngầu đã có từng hàng tên + điểm, không cần dải tên người chơi nữa
+    $('game-players').classList.toggle('hidden', ['xingau', 'chai', 'ott'].includes(g.kind) && g.phase === 'result');
     const act = $('game-actions');
     act.innerHTML = '';
     const btn = (text, fn, cls = '') => {
@@ -115,19 +117,39 @@ export function createTableGames(ctx) {
   function resultText(g) {
     const L = g.losers.map(nameOf).map(ctx.escapeHtml).join(', ');
     switch (g.kind) {
-      case 'chai': return `🍾 Chai chỉ vào <b>${L}</b>: uống cạn! Thử thách: <i>${ctx.escapeHtml(g.dare)}</i>`;
+      case 'chai': return `<div class="lose-card"><small>🍾 Chai chỉ vào</small><b class="who">${L}</b><span class="drink">🍺 Uống cạn!</span></div>`
+        + `<div class="dare"><small>🎯 Thử thách</small>${ctx.escapeHtml(g.dare)}</div>`;
       case 'xingau': {
-        const pts = Object.entries(g.rolls).map(([id, r]) => `${ctx.escapeHtml(nameOf(id))} ${r.join('·')}=${r.reduce((a, b) => a + b, 0)}`).join(' | ');
-        return g.tie ? `🎲 Bằng điểm hết, cả bàn cùng dzô! (${pts})` : `🎲 ${pts}<br>Thấp nhất <b>${L}</b> uống!`;
+        // Mỗi người một hàng: tên, 3 mặt xí ngầu có chấm, tổng điểm to; cao điểm nhất lên đầu
+        const rows = Object.entries(g.rolls).sort((a, b) => sumOf(b[1]) - sumOf(a[1])).map(([id, r]) => {
+          const cls = g.tie ? '' : g.losers.includes(id) ? ' lose' : g.winners.includes(id) ? ' win' : '';
+          return `<div class="xr${cls}"><span class="nm">${ctx.escapeHtml(nameOf(id))}</span><span class="xr-dice">${r.map(dieSvg).join('')}</span><b class="sum">${sumOf(r)}</b></div>`;
+        }).join('');
+        return `<div class="xingau">${rows}</div>` + (g.tie ? '🎲 Bằng điểm hết, cả bàn cùng dzô!' : `Thấp nhất <b>${L}</b> uống!`);
       }
       case 'ott': {
-        const show = Object.entries(g.reveal || {}).map(([id, m]) => `${ctx.escapeHtml(nameOf(id))} ${RPS[m]?.icon || '🙈'}`).join(' · ');
-        return g.tie ? `✊ Hoà mãi, cả bàn cùng dzô! (${show})` : `✊ ${show}<br>Thua: <b>${L}</b> uống!`;
+        // Từng người ra gì (tay to), người thua viền đỏ; bên dưới khung người thua như quay chai
+        const moves = Object.entries(g.reveal || {}).map(([id, m]) => {
+          const cls = g.tie ? '' : g.losers.includes(id) ? ' lose' : ' win';
+          return `<span class="mv${cls}"><i>${RPS[m]?.icon || '🙈'}</i><b>${ctx.escapeHtml(nameOf(id))}</b><small>${RPS[m]?.name || 'Không ra'}</small></span>`;
+        }).join('');
+        const card = g.tie
+          ? `<div class="lose-card"><small>✊ Hoà mãi không phân thắng thua</small><b class="who">Cả bàn</b><span class="drink">🍻 Cùng dzô!</span></div>`
+          : `<div class="lose-card"><small>✊ Thua oẳn tù tì</small><b class="who">${L}</b><span class="drink">🍺 Uống cạn!</span></div>`;
+        return `<div class="ott-moves">${moves}</div>${card}`;
       }
       case 'dovui': return `❓ Đáp án: <b>${'ABC'[g.answer]}. ${ctx.escapeHtml(g.a[g.answer])}</b>${L ? `<br>Sai hoặc không trả lời: <b>${L}</b> uống!` : '<br>Cả bàn đều đúng! 🎉'}`;
       case 'bill': return g.paid ? `🧾 <b>${L}</b> bốc trúng, trả cả hoá đơn ${ctx.fmt(g.total)}!` : `🧾 <b>${L}</b> bốc trúng nhưng chưa trả được hoá đơn.`;
     }
     return '';
+  }
+  const sumOf = (r) => r.reduce((a, b) => a + b, 0);
+  // Vị trí chấm trên mặt 3x3 (ô 0..8) cho từng số; mặt 1 và 4 chấm đỏ như xí ngầu quán nhậu
+  const PIPS = { 1: [4], 2: [2, 6], 3: [2, 4, 6], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
+  const pipColor = (v) => (v === 1 || v === 4 ? '#d32f2f' : '#1e40af');
+  function dieSvg(v) {
+    const dots = PIPS[v].map((i) => `<circle cx="${6 + (i % 3) * 8}" cy="${6 + Math.floor(i / 3) * 8}" r="${v === 1 ? 4 : 2.3}"/>`).join('');
+    return `<svg class="die" viewBox="0 0 28 28"><rect x="1" y="1" width="26" height="26" rx="6"/><g fill="${pipColor(v)}">${dots}</g></svg>`;
   }
   // Thanh thời gian còn lại
   function tickTimer() {
@@ -158,6 +180,56 @@ export function createTableGames(ctx) {
     plate.position.y = -0.005;
     bowl.add(cup, plate);
   }
+  // Xí ngầu 3D: mỗi mặt một texture vẽ chấm, mặt trên là số đã lắc
+  const dieTex = {};
+  for (let v = 1; v <= 6; v++) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d');
+    g.fillStyle = '#fafafa';
+    g.fillRect(0, 0, 64, 64);
+    g.fillStyle = pipColor(v);
+    for (const i of PIPS[v]) {
+      g.beginPath();
+      g.arc(14 + (i % 3) * 18, 14 + Math.floor(i / 3) * 18, v === 1 ? 11 : 6.5, 0, Math.PI * 2);
+      g.fill();
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    dieTex[v] = new THREE.MeshStandardMaterial({ map: t, roughness: 0.5 });
+  }
+  // Thứ tự mặt BoxGeometry: +x, -x, +y, -y, +z, -z. Mặt đối diện cộng lại bằng 7.
+  const SIDES = { 1: [2, 3], 2: [1, 3], 3: [1, 2], 4: [1, 5], 5: [1, 4], 6: [2, 4] };
+  const dieGeo = new THREE.BoxGeometry(0.085, 0.085, 0.085);
+  const diceGroup = new THREE.Group();
+  function makeDie(v) {
+    const [a, b] = SIDES[v];
+    return new THREE.Mesh(dieGeo, [a, 7 - a, v, 7 - v, b, 7 - b].map((k) => dieTex[k]));
+  }
+  // Bày 3 viên trước mặt từng người chơi (giữa tâm bàn và ghế), xếp ngang, mặt chấm hướng về người đó
+  function showDice(m, T) {
+    diceGroup.clear();
+    for (const [id, r] of Object.entries(m.rolls)) {
+      const seat = ctx.actorById(id)?.seat;
+      if (!seat || seat.table !== m.table) continue;
+      const s = ctx.seatPos(T, seat.idx);
+      let p;
+      if (T.shape === 'long') p = { x: s.x, z: T.z + Math.sign(s.z - T.z) * T.w * 0.22 };
+      else { const d = Math.hypot(s.x - T.x, s.z - T.z) || 1, k = (T.r * 0.5) / d; p = { x: T.x + (s.x - T.x) * k, z: T.z + (s.z - T.z) * k }; }
+      const yaw = Math.atan2(s.x - p.x, s.z - p.z);
+      const row = new THREE.Group();
+      r.forEach((v, i) => {
+        const d = makeDie(v);
+        d.position.set((i - 1) * 0.105, 0.0425, 0);
+        d.rotation.y = (Math.random() - 0.5) * 0.5;
+        row.add(d);
+      });
+      row.position.set(p.x, 0.61, p.z);
+      row.rotation.y = yaw;
+      diceGroup.add(row);
+    }
+    ctx.floors[T.floor].add(diceGroup);
+  }
   function place(obj, T) {
     obj.position.set(T.x, 0.62, T.z);
     ctx.floors[T.floor].add(obj);
@@ -165,6 +237,7 @@ export function createTableGames(ctx) {
   function clear3d() {
     bottle.removeFromParent();
     bowl.removeFromParent();
+    diceGroup.removeFromParent();
     spin = anim = null;
   }
   const ease = (k) => 1 - Math.pow(1 - k, 3);
@@ -214,10 +287,16 @@ export function createTableGames(ctx) {
     }
     for (const id of m.winners) { const a = ctx.actorById(id); if (a) ctx.speak(a, m.payouts?.[id] ? `🤑 +${m.payouts[id] / 1000}k` : '😎 Thoát!', 3000); }
     if (m.kind === 'xingau') {
-      for (const [id, r] of Object.entries(m.rolls)) { const a = ctx.actorById(id); if (a && !m.losers.includes(id) && !m.winners.includes(id)) ctx.speak(a, `🎲 ${r.join('·')}`, 3000); }
+      for (const [id, r] of Object.entries(m.rolls)) { const a = ctx.actorById(id); if (a && !m.losers.includes(id) && !m.winners.includes(id)) ctx.speak(a, `🎲 ${sumOf(r)} điểm`, 3000); }
       bowl.removeFromParent();
+      showDice(m, T);
     }
     if (m.kind === 'ott') for (const [id, mv] of Object.entries(m.reveal || {})) { const a = ctx.actorById(id); if (a && !m.losers.includes(id) && !m.winners.includes(id)) ctx.speak(a, RPS[mv]?.icon || '🙈', 3000); }
+    // Người khác thua: trên máy mình cũng thấy họ nâng ly uống cạn (cùng lúc với máy họ)
+    if (m.penalty) for (const id of m.losers) {
+      if (id === ctx.myId()) continue;
+      setTimeout(() => { const a = ctx.actorById(id); if (a?.seat) ctx.playAct(a, 'cheers'); }, 900);
+    }
     // Mình thua: uống phạt (server đã tính ly này vào hoá đơn)
     if (m.penalty && m.losers.includes(ctx.myId()) && penaltyDone !== m.id) {
       penaltyDone = m.id;

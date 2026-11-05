@@ -25,7 +25,7 @@ Mở nhiều tab hoặc nhiều máy trong cùng mạng là thấy nhau.
 
 - **3 tầng, 40 bàn, 163 ghế, tối đa 150 khách mỗi cơ sở.**
   - Tầng 1: vỉa hè, trong nhà, quầy thu ngân, bếp, bãi giữ xe.
-  - Tầng 2: phòng riêng (khoá được) và phòng VIP.
+  - Tầng 2: phòng riêng và phòng VIP. Chủ phòng khoá bằng mật mã 4 số, người ngoài gõ cửa rồi nhập mã mới vào được (nhân viên vẫn vào phục vụ).
   - Tầng 3: sân thượng, sân khấu karaoke.
 - Lên xuống tầng bằng thang máy. Mỗi tầng có WC nam/nữ.
 - Sáng/tối theo giờ thật ở Việt Nam. Bãi biển có người đi dạo và chơi trò chơi.
@@ -38,7 +38,6 @@ Mở nhiều tab hoặc nhiều máy trong cùng mạng là thấy nhau.
 - **Chat:** kênh 🌏 Cả quán ai trong cơ sở cũng thấy, kênh 🪑 Bàn chỉ người cùng bàn thấy.
 - **Thoại:** chọn kênh 🎧 Bàn hoặc Cả quán phía trên khung chat, bấm 🎙️ (phím V) để nói. Có thể tắt tiếng từng người trong danh sách 👥.
 - **Karaoke:** lên sân khấu chọn bài và xếp hàng. Người đứng dưới bấm 💃 để nhảy theo.
-- **Giờ vàng:** cứ 10 phút, cả quán cùng dzô.
 - **Ví tiền:** mỗi người vào được 1.000.000đ ảo. Hết tiền thì ra biển câu cá (đứng sát mép nước) hoặc nhặt cua, ốc, vỏ sò, chai trôi dạt trên bãi rồi mang ra sạp Bà Tư (chân bậc xuống biển) bán. Cá hiếm (cá mú, tôm hùm) được giá cao.
 - **Tính tiền:**
   - Bàn phải gọi món rồi mới tính tiền được.

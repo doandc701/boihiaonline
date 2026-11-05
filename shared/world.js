@@ -183,9 +183,6 @@ export const MAX_DISHES = 8;
 // Chat chỉ dành cho người ngồi cùng bàn.
 export const CHAT_MAX = 140;
 
-// Giờ vàng: cứ 10 phút cả quán cùng dzô một lần (tính theo giờ server).
-export const GOLDEN_EVERY = 10 * 60 * 1000;
-export const GOLDEN_MS = 15000;
 
 export function seatPos(T, i) {
   if (T.shape === 'long') {

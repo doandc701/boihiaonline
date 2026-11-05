@@ -300,7 +300,10 @@ function payBill(room, p, table) {
   return true;
 }
 const pub = (p) => ({ id: p.id, name: p.name, look: p.look, x: p.x, z: p.z, f: p.f, yaw: p.yaw, d: p.d, seat: p.seat });
-const roomMsg = (room, table) => ({ t: 'room', table, ...(room.privateRooms.get(table) || { owner: null, locked: false }) });
+const roomMsg = (room, table) => {
+  const { owner = null, locked = false } = room.privateRooms.get(table) || {};
+  return { t: 'room', table, owner, locked }; // mật mã (code) không bao giờ gửi đi
+};
 const micState = (room) => ({ t: 'mic', ...room.mic, queue: room.mic.queue.map((q) => ({ id: q.id, title: q.track.title })) });
 
 function cleanName(v) {
@@ -397,7 +400,23 @@ function sit(room, p, m) {
     return;
   }
   const priv = room.privateRooms.get(T.id);
-  if (priv?.locked && priv.owner !== p.id) { send(p.ws, { t: 'sit-fail', table: T.id, locked: true }); return; }
+  // Phòng khoá: phải nhập đúng mật mã 4 số chủ phòng đặt. Sai 5 lần thì khoá thử 60 giây.
+  // Người đã ngồi phòng này trong cuộc (ra WC, lên hát rồi về) thì vào lại không cần mật mã.
+  if (priv?.locked && priv.owner !== p.id && !room.tabs[T.id].members.includes(p.pid)) {
+    p.codeTry ??= { n: 0, until: 0 };
+    if (Date.now() < p.codeTry.until) { send(p.ws, { t: 'sit-fail', table: T.id, locked: true, wait: Math.ceil((p.codeTry.until - Date.now()) / 1000) }); return; }
+    if (typeof m.code !== 'string' || m.code !== priv.code) {
+      if (typeof m.code === 'string') {
+        p.codeTry.n++;
+        if (p.codeTry.n >= 5) { p.codeTry = { n: 0, until: Date.now() + 60000 }; }
+      }
+      send(p.ws, { t: 'sit-fail', table: T.id, locked: true, wrong: typeof m.code === 'string' });
+      return;
+    }
+    p.codeTry.n = 0;
+    const owner = room.players.get(priv.owner);
+    if (owner) send(owner.ws, { t: 'notice', msg: `🔑 ${p.name} nhập đúng mật mã, vào ${T.name}` });
+  }
   const hold = room.holds.get(T.id);
   if (hold && !room.tabs[T.id].members.includes(p.pid)) { send(p.ws, { t: 'sit-fail', table: T.id, held: true }); return; }
   const idx = want >= 0 ? want : nearestFreeSeat(T, (i) => room.seats.has(`${T.id}:${i}`), p.x, p.z);
@@ -421,10 +440,13 @@ function sit(room, p, m) {
   }
 }
 
-function setRoomLock(room, p, locked) {
+function setRoomLock(room, p, locked, code) {
   const table = p.seat?.table, priv = room.privateRooms.get(table);
   if (!priv || priv.owner !== p.id) return;
+  if (locked && !/^\d{4}$/.test(String(code ?? ''))) { send(p.ws, { t: 'notice', msg: '🔒 Mật mã phải đúng 4 chữ số' }); return; }
   priv.locked = !!locked;
+  priv.code = locked ? String(code) : null;
+  if (locked) send(p.ws, { t: 'notice', msg: `🔒 Đã khoá phòng, mật mã ${code}. Báo mật mã cho bạn bè để họ vào được.` });
   broadcast(room, roomMsg(room, table));
 }
 
@@ -824,8 +846,15 @@ function handle(room, p, m) {
         });
       break;
     }
+    case 'knock': {
+      // Gõ cửa phòng đang khoá: người trong phòng nghe tiếng gõ và biết ai đang đứng ngoài.
+      const priv = room.privateRooms.get(m.table);
+      if (!priv?.locked || !cooldown(p, 'knock', 3000)) return;
+      toTable(room, m.table, { t: 'knock', table: m.table, id: p.id, name: p.name });
+      break;
+    }
     case 'room-lock':
-      if (cooldown(p, 'lock', 500)) setRoomLock(room, p, m.locked);
+      if (cooldown(p, 'lock', 500)) setRoomLock(room, p, m.locked, m.code);
       break;
     case 'chat': {
       // scope 'all': cả quán đều thấy, ai cũng chat được nhưng chậm hơn.

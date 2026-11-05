@@ -162,9 +162,7 @@
         <div class="bar"><div id="drunk-bar"></div></div>
         <span id="drunk-label">Tỉnh táo</span>
       </div>
-      <div id="where" class="small"></div>
-      <div id="clock" class="small"></div>
-      <div id="golden-timer" class="small"></div>
+      <div class="info-row"><div id="where" class="small"></div><div id="clock" class="small clock" title=""></div></div>
       <button id="btn-lock" class="chip hidden"></button>
     </div>
     <div class="top-right">
@@ -178,7 +176,6 @@
     <div id="mic-bar" class="mic-bar hidden"></div>
     <button id="tv-play" class="tv-play hidden">▶ Chạm để nghe bài hát</button>
     <div id="prompt" class="prompt hidden"></div>
-    <div id="golden" class="golden hidden"></div>
 
     <!-- Thanh hành động: mỗi nhóm (uống / gọi mồi / giao lưu) là một nút, bấm mở ra các nút con; cuối là nút riêng
          (câu cá, đứng dậy). Nhóm không còn nút con nào hiện thì tự ẩn (CSS :has). -->
@@ -221,7 +218,7 @@
           <button id="chat-tab-table" type="button" role="tab" data-scope="table" title="Chat với cả bàn"><b class="ic">👥</b><i class="badge hidden"></i></button>
         </div>
         <div class="chat-main">
-          <button id="chat-close" type="button" class="chat-close" title="Thu gọn chat" aria-label="Thu gọn chat">✕</button>
+          <button id="chat-close" type="button" class="chat-fold" title="Thu gọn chat" aria-label="Thu gọn chat">‹</button>
           <div id="chat-log" class="chat-log"></div>
           <div id="chat-log-all" class="chat-log hidden"></div>
         </div>
@@ -254,7 +251,7 @@
           <span class="preview-hint">Kéo để xoay</span>
         </div>
         <div>
-          <div class="field">Tên bạn <span class="name-row"><input id="player-name" maxlength="20" placeholder="Nhập tên của bạn" autocomplete="nickname" required aria-label="Tên bạn"><button id="btn-name-dice" type="button" class="ghost dice" title="Đặt tên ngẫu nhiên" aria-label="Đặt tên ngẫu nhiên">🎲</button></span></div>
+          <div class="field">Tên bạn <span class="name-row"><input id="player-name" maxlength="20" placeholder="Nhập tên của bạn" autocomplete="nickname" required aria-label="Tên bạn"></span></div>
           <div class="field">Áo <div id="shirt-picker" class="swatches"></div></div>
           <div class="field">Kiểu <div id="hair-picker" class="seg"></div>
             <label class="belly"><input id="belly" type="checkbox"> Bụng bia</label></div>
@@ -385,6 +382,19 @@
     <div id="game-actions" class="game-actions"></div>
   </div>
 
+  <div id="overlay-code" class="overlay hidden">
+    <div class="panel code-panel">
+      <h2 id="code-title">🔒 Khoá phòng</h2>
+      <p id="code-sub" class="sub"></p>
+      <input id="code-input" class="code-input" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" placeholder="••••" aria-label="Mật mã 4 chữ số">
+      <p id="code-msg" class="small warn"></p>
+      <div class="row-btns">
+        <button id="btn-code-ok">OK</button>
+        <button id="btn-code-cancel" class="ghost">Thôi</button>
+      </div>
+    </div>
+  </div>
+
   <div id="overlay-poem" class="overlay hidden">
     <div class="panel poem-panel">
       <h2 id="poem-title">📜 Thơ nhậu</h2>
@@ -461,7 +471,7 @@
           <li><b>Click bàn</b> (hoặc <b>E</b>) để ngồi vào ghế trống</li>
           <li>Ngồi rồi: <b>1</b> dzô (ly rỗng thì em rót bia tới rót trước) · <b>5</b> gọi mồi · <b>6</b> nước lọc · <b>B</b> tính tiền</li>
           <li><b>8</b> chọn người cùng bàn để mời một ly, đồng ý là cả bàn dzô · <b>3</b> vẫy chào · <b>4</b> vỗ tay</li>
-          <li>Lên <b>sân khấu karaoke</b> xếp hàng hát. Mỗi 10 phút có <b>giờ vàng</b>, cả quán cùng dzô</li>
+          <li>Lên <b>sân khấu karaoke</b> xếp hàng hát · <b>9</b> rủ cả bàn chơi trò chơi</li>
         </ul>
       </details>
       <details class="controls">

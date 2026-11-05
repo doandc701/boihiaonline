@@ -99,8 +99,8 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
 .voice-live { align-self: flex-start; padding: 6px 12px; border-radius: 99px; background: #e53935; color: #fff; font-weight: 700; font-size: .85rem; animation: micPulse 1.2s ease-in-out infinite; }
 @keyframes micPulse { 50% { box-shadow: 0 0 0 4px #e5393555; } }
 /* Điện thoại, chat đang thu gọn: một hàng gồm nút 💬 (và viên mic đỏ khi đang nói) */
-.chat.compact.collapsed { flex-direction: row; align-items: center; gap: 8px; }
-.chat.compact.collapsed .chat-toggle { order: -1; }
+.chat.collapsed { flex-direction: row; align-items: center; gap: 8px; }
+.chat.collapsed .chat-toggle { order: -1; }
 .chat .ic { font-weight: 400; }
 /* Điện thoại: các nút trong khung chat chỉ còn biểu tượng (chữ đưa vào tooltip) */
 @media (max-width: 900px), (max-height: 500px) {
@@ -126,6 +126,21 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
   background: var(--surface); color: var(--surface-text); padding: 3px 10px; border-radius: 99px;
   align-self: flex-start; text-shadow: none; border: 1px solid var(--border-soft);
 }
+/* Vị trí và đồng hồ chung một hàng */
+.info-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.top-left .clock { font-variant-numeric: tabular-nums; font-weight: 700; letter-spacing: .02em; cursor: default; pointer-events: auto; }
+/* Thanh cuộn mảnh, bo tròn, hợp nền tối của khung chat và các bảng */
+/* Firefox (không có ::-webkit-scrollbar); Chrome/Safari dùng kiểu ::-webkit-scrollbar bên dưới để bỏ mũi tên */
+@supports not selector(::-webkit-scrollbar) {
+  .chat-log, .panel, .panel-body, .song-list, .games-list, .bag-list, .menu-items { scrollbar-width: thin; scrollbar-color: #ffffff55 transparent; }
+  .panel, .panel-body, .song-list, .games-list, .bag-list, .menu-items { scrollbar-color: color-mix(in srgb, var(--accent) 60%, transparent) transparent; }
+}
+:is(.chat-log, .panel, .panel-body, .song-list, .games-list, .bag-list, .menu-items)::-webkit-scrollbar { width: 6px; height: 6px; }
+:is(.chat-log, .panel, .panel-body, .song-list, .games-list, .bag-list, .menu-items)::-webkit-scrollbar-track { background: transparent; }
+:is(.chat-log, .panel, .panel-body, .song-list, .games-list, .bag-list, .menu-items)::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--accent) 60%, transparent); border-radius: 99px; }
+.chat-log::-webkit-scrollbar-thumb { background: #ffffff55; }
+.chat-log::-webkit-scrollbar-thumb:hover { background: #ffffff88; }
+:is(.chat-log, .panel, .panel-body, .song-list, .games-list, .bag-list, .menu-items)::-webkit-scrollbar-button { display: none; height: 0; }
 .bar { width: 120px; height: 10px; background: var(--field); border: 1px solid var(--border-soft); border-radius: 99px; overflow: hidden; }
 #drunk-bar { height: 100%; width: 0; background: linear-gradient(90deg, #6c3, var(--accent), var(--danger)); transition: width .5s; }
 
@@ -192,9 +207,6 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
 .tv-play { position: absolute; left: 50%; top: calc(58px + env(safe-area-inset-top)); transform: translateX(-50%); pointer-events: auto; background: #e53935; color: #fff; box-shadow: 0 4px 14px #0006; animation: tvPulse 1.2s ease-in-out infinite; }
 @keyframes tvPulse { 50% { transform: translateX(-50%) scale(1.06); } }
 
-.golden { position: absolute; left: 50%; top: 30%; transform: translate(-50%, -50%); text-align: center; font-weight: 900; text-shadow: 0 0 20px #f2a900, 0 2px 4px #000; width: 100%; padding: 0 12px; }
-.golden .big-text { font-size: clamp(2.5rem, 10vw, 6rem); color: #ffe082; }
-.golden .sub-text { font-size: 1.1rem; color: #fff; }
 
 .side { position: absolute; left: 12px; top: 150px; width: 240px; max-height: calc(100% - 270px); overflow: auto; background: var(--panel); border-radius: 12px; padding: 10px 14px; border: 1px solid var(--border-soft); }
 .side h3 { margin: 0 0 2px; }
@@ -212,7 +224,6 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
 .sub { color: var(--muted); margin-top: 0; }
 .field { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; margin: 12px 0; }
 .name-row { display: inline-flex; gap: 6px; align-items: center; min-width: 0; }
-.name-row .dice { padding: 6px 10px; font-size: 18px; line-height: 1; }
 .field input.invalid { border-color: #e53935; box-shadow: 0 0 0 2px rgba(229, 57, 53, .25); }
 .field input[type=text], .field input:not([type]) { background: var(--field); color: var(--text); border: 1px solid var(--muted); border-radius: 8px; padding: 8px 12px; font: inherit; min-width: 0; max-width: 100%; }
 .swatches { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
@@ -355,6 +366,14 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
 }
 #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; visibility: visible; transition: transform .3s, opacity .3s; }
 
+/* Mật mã phòng riêng */
+.code-panel { max-width: 340px; }
+.code-input { box-sizing: border-box; width: 6.4em; max-width: 100%; font: 700 2rem/1.2 ui-monospace, monospace; letter-spacing: .5em; text-indent: .5em; text-align: center; padding: 8px 0;
+  background: var(--field); color: var(--text); border: 2px solid var(--muted); border-radius: 12px; }
+.code-input:focus { outline: none; border-color: var(--accent); }
+.code-panel.shake { animation: codeShake .35s; }
+@keyframes codeShake { 25% { transform: translateX(-8px); } 75% { transform: translateX(8px); } }
+
 /* Trò chơi cùng bàn */
 .games-panel { max-width: 460px; }
 .games-list { display: grid; gap: 6px; margin: 10px 0; text-align: left; max-height: 45vh; overflow: auto; }
@@ -377,6 +396,35 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
 .game-players small { color: #2e7d32; font-weight: 700; }
 .game-players small.why { color: #c62828; font-weight: 500; }
 .game-status { margin: 6px 0; font-size: .88rem; }
+/* Kết quả quay chai: tên người thua to, đỏ, rung nhẹ; thử thách trong khung riêng */
+.lose-card { display: flex; flex-direction: column; align-items: center; gap: 2px; background: linear-gradient(#ffebee, #ffcdd2);
+  border: 2px solid #e53935; border-radius: 14px; padding: 6px 12px 8px; margin-bottom: 6px; animation: lose-pop .5s ease-out; }
+.lose-card small { color: #8d3a3a; font-size: .8rem; }
+.lose-card .who { font-size: 1.6rem; line-height: 1.15; color: #c62828; text-shadow: 0 1px 0 #fff; word-break: break-word; }
+.lose-card .drink { background: #e53935; color: #fff; font-weight: 800; border-radius: 99px; padding: 2px 12px; font-size: .9rem; }
+.dare { background: var(--field); border-radius: 10px; padding: 6px 10px; margin-bottom: 4px; font-style: italic; }
+.dare small { display: block; font-style: normal; font-weight: 700; color: var(--muted); font-size: .75rem; }
+@keyframes lose-pop { 0% { transform: scale(.7); opacity: 0; } 60% { transform: scale(1.06); } 80% { transform: rotate(-2deg); } 100% { transform: none; opacity: 1; } }
+/* Kết quả oẳn tù tì: mỗi người một ô, tay ra to */
+.ott-moves { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-bottom: 6px; }
+.ott-moves .mv { display: flex; flex-direction: column; align-items: center; min-width: 76px; background: var(--field); border-radius: 12px; padding: 4px 8px; }
+.ott-moves .mv i { font-style: normal; font-size: 1.9rem; line-height: 1.1; }
+.ott-moves .mv b { font-size: .85rem; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ott-moves .mv small { color: var(--muted); font-size: .72rem; }
+.ott-moves .mv.lose { background: #e5393526; outline: 1.5px solid #e53935; }
+.ott-moves .mv.lose b { color: #c62828; }
+.ott-moves .mv.win { background: #43a04726; outline: 1.5px solid #43a047; }
+.xingau { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
+.xingau .xr { display: flex; align-items: center; gap: 8px; background: var(--field); border-radius: 10px; padding: 4px 10px; }
+.xingau .xr.lose { background: #e5393526; outline: 1.5px solid #e53935; }
+.xingau .xr.win { background: #43a04726; outline: 1.5px solid #43a047; }
+.xingau .nm { flex: 1; text-align: left; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xingau .xr-dice { display: flex; gap: 4px; }
+.xingau .die { width: 28px; height: 28px; filter: drop-shadow(0 1px 1px #0005); }
+.xingau .die rect { fill: #fff; stroke: #cfd4dc; stroke-width: 1; }
+.xingau .sum { min-width: 2ch; font-size: 1.35rem; text-align: right; }
+.xingau .xr.lose .sum { color: #c62828; }
+.xingau .xr.win .sum { color: #2e7d32; }
 .game-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
 .game-actions button { padding: 6px 12px; font-size: .9rem; }
 .game-actions.quiz { flex-direction: column; }
@@ -450,12 +498,15 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
 .chat-tabs button:disabled { opacity: .25; cursor: default; }
 .chat .badge { position: absolute; top: 3px; right: 3px; min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border-radius: 99px;
   background: #e53935; color: #fff; font: 700 10px/16px system-ui, sans-serif; font-style: normal; text-align: center; }
-.chat-main { position: relative; min-width: 0; padding: 6px 34px 6px 10px; }
-.chat-close {
-  position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; padding: 0; border-radius: 50%;
-  background: #ffffff26; color: #fff; font-size: .8rem; display: none;
+.chat-main { position: relative; min-width: 0; padding: 6px 26px 6px 10px; }
+/* Nút ‹ thu gọn chat: tay nắm mảnh ở mép phải, giữa khung */
+.chat-fold {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 18px; height: 46px; padding: 0;
+  border: 0; border-radius: 9px; background: #ffffff1f; color: #ffffffcc; font: 700 1.25rem/1 system-ui, sans-serif;
+  display: grid; place-items: center; cursor: pointer; transition: background .15s, color .15s;
 }
-.chat.compact .chat-close { display: block; }
+.chat-fold:hover { background: #ffffff3d; color: #fff; }
+.chat-fold:active { transform: translateY(-50%) scale(.94); }
 .chat-log { height: 132px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; font-size: .85rem; line-height: 1.35; }
 .chat-log div { overflow-wrap: anywhere; text-shadow: 0 1px 2px #000; }
 .chat-log b { color: #7ec8ff; font-weight: 700; }
@@ -469,11 +520,11 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
 .chat input::placeholder { color: #ffffff8c; }
 .chat input:focus { outline: none; border-color: #f2c94c; }
 .chat-panel form button { padding: 6px 14px; border-radius: 8px; background: #f2c94c; color: #3e2723; font-size: 1rem; }
-/* Nút 💬 mở chat: chỉ hiện trên điện thoại khi chat đang thu gọn */
+/* Nút 💬 mở chat: hiện khi chat đang thu gọn (máy tính lẫn điện thoại) */
 .chat-toggle { display: none; position: relative; padding: 8px 12px; border-radius: 10px; background: #0f1724c4; color: #fff; border: 1px solid #ffffff26; font-size: 1.1rem; }
-.chat.compact.collapsed .chat-toggle { display: inline-block; }
-.chat.compact.collapsed { right: auto; width: auto; }
-.chat.compact.collapsed .chat-panel { display: none; }
+.chat.collapsed .chat-toggle { display: inline-block; }
+.chat.collapsed { right: auto; width: auto; }
+.chat.collapsed .chat-panel { display: none; }
 
 /* Chọn bài */
 .search { width: 100%; background: var(--field); color: var(--text); border: 1px solid var(--muted); border-radius: 8px; padding: 9px 12px; font: inherit; font-size: 16px; }
@@ -539,26 +590,24 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
   .tv-play { top: calc(166px + env(safe-area-inset-top)); }
   .side { top: 140px; width: min(260px, calc(100% - 24px)); }
   .tv { top: auto; bottom: calc(150px + env(safe-area-inset-bottom)); width: min(320px, calc(100% - 24px)); }
-  .golden .sub-text { font-size: .95rem; }
-}
+  }
 /* Thiết bị cảm ứng: không có bàn phím nên ẩn phím tắt */
 @media (pointer: coarse) {
   .action-bar kbd { display: none; }
 }
 @media (max-width: 380px) {
   .action-bar span { display: none; }
-  #where, #golden-timer, #clock { display: none; }
+  #where { display: none; }
   .meter { font-size: .75rem; }
   .bar { width: 44px; }
   .room-part { display: none; } /* chừa chỗ cho hàng nút góc phải */
 }
 /* Điện thoại xoay ngang: màn hình thấp */
 @media (max-height: 500px) {
-  /* cột thông tin góc trái gọn lại, chừa chỗ nhìn cảnh: bỏ giờ và giờ vàng (giờ vàng vẫn có thông báo lớn) */
+  /* cột thông tin góc trái gọn lại, chừa chỗ nhìn cảnh */
   .top-left { gap: 3px; font-size: .78rem; }
   .chip { padding: 4px 10px; font-size: .8rem; }
   .icon { width: 36px; height: 36px; font-size: .95rem; }
-  #golden-timer, #clock { display: none; }
   .bar { width: 70px; }
   .panel { padding: 12px 16px; }
   .panel h1 { font-size: 1.4rem; }
@@ -571,7 +620,6 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
   .prompt { bottom: calc(66px + env(safe-area-inset-bottom)); }
   .tv { width: min(280px, 40vw); top: calc(56px + env(safe-area-inset-top)); bottom: auto; }
   .mic-bar { top: max(8px, env(safe-area-inset-top)); }
-  #golden-timer { display: none; }
 }
 
 /* ================= Nút kiểu game mobile =================
@@ -579,8 +627,8 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
    Màu đặt qua --b1/--b2 (mặt nút) và --be (mép dưới). Nút dạng danh sách (bài hát, món, tầng thang máy, màu áo)
    không nằm trong danh sách dưới nên giữ kiểu phẳng. */
 :root { --gb-ink: #2b2452; }
-button:not([class]), button.ghost, button.big, .icon, .chip, .close-x, .chat-close, .seg button,
-.action-bar button, .pay-btn, .donate-btn, .boot-retry, .tv-play, .yt-search, .dice, .round, .chat-panel form button,
+button:not([class]), button.ghost, button.big, .icon, .chip, .close-x, .seg button,
+.action-bar button, .pay-btn, .donate-btn, .boot-retry, .tv-play, .yt-search, .round, .chat-panel form button,
 .chat-toggle, .voice-live, .row-btns button {
   --b1: #4fe06b; --b2: #2fbf4f; --be: #1d8f37; /* xanh lá: nút chính */
   background: linear-gradient(180deg, var(--b1), var(--b2));
@@ -590,18 +638,18 @@ button:not([class]), button.ghost, button.big, .icon, .chip, .close-x, .chat-clo
   font-weight: 800;
   transition: transform .07s ease, box-shadow .07s ease, filter .15s ease;
 }
-:is(button:not([class]), button.ghost, button.big, .icon, .chip, .close-x, .chat-close, .seg button, .action-bar button, .pay-btn,
-.donate-btn, .boot-retry, .tv-play, .yt-search, .dice, .round, .chat-panel form button, .chat-toggle, .voice-live, .row-btns button):hover:not(:disabled) {
+:is(button:not([class]), button.ghost, button.big, .icon, .chip, .close-x, .seg button, .action-bar button, .pay-btn,
+.donate-btn, .boot-retry, .tv-play, .yt-search, .round, .chat-panel form button, .chat-toggle, .voice-live, .row-btns button):hover:not(:disabled) {
   background: linear-gradient(180deg, var(--b1), var(--b2)); filter: brightness(1.07);
 }
-:is(button:not([class]), button.ghost, button.big, .icon, .chip, .close-x, .chat-close, .seg button, .action-bar button, .pay-btn,
-.donate-btn, .boot-retry, .tv-play, .yt-search, .dice, .round, .chat-panel form button, .chat-toggle, .voice-live, .row-btns button):active:not(:disabled) {
+:is(button:not([class]), button.ghost, button.big, .icon, .chip, .close-x, .seg button, .action-bar button, .pay-btn,
+.donate-btn, .boot-retry, .tv-play, .yt-search, .round, .chat-panel form button, .chat-toggle, .voice-live, .row-btns button):active:not(:disabled) {
   transform: translateY(2px);
   box-shadow: inset 0 2px 0 #ffffff6b, inset 0 -2px 0 var(--be), 0 1px 0 var(--gb-ink);
 }
 /* Bảng màu (thêm html phía trước để thắng các quy tắc chung như .row-btns button, .action-bar button) */
-html button.ghost, html .tv-play, html .dice, .ab-group:nth-of-type(2) button { --b1: #c584ff; --b2: #9d52ea; --be: #6b2bb5; }   /* tím: nút phụ */
-html .close-x, html .chat-close, html .yt-search, html .ab-orange { --b1: #ff7070; --b2: #e8434d; --be: #ad2432; }                /* đỏ: đóng, đứng dậy */
+html button.ghost, html .tv-play, .ab-group:nth-of-type(2) button { --b1: #c584ff; --b2: #9d52ea; --be: #6b2bb5; }   /* tím: nút phụ */
+html .close-x, html .yt-search, html .ab-orange { --b1: #ff7070; --b2: #e8434d; --be: #ad2432; }                /* đỏ: đóng, đứng dậy */
 html .round, html .donate-btn, .ab-group:nth-of-type(1) button { --b1: #ffbf47; --b2: #f59a1b; --be: #c26a08; }                 /* cam */
 .ab-group:nth-of-type(3) button { --b1: #56a8ff; --b2: #2f80ec; --be: #1c56b3; }                                                 /* xanh dương */
 html .icon, html .chip, html .chat-toggle, html .seg button { --b1: #5d62a3; --b2: #474b8c; --be: #30336b; }                         /* xám tím: nút phụ, chip */
@@ -626,19 +674,20 @@ html .donate-btn { font-size: .82rem; padding: 6px 14px; border-radius: 12px; bo
 /* Hình dáng */
 .icon { border-radius: 50%; }
 .chip { border-radius: 99px; box-shadow: inset 0 2px 0 #ffffff40, inset 0 -3px 0 var(--be), 0 2px 0 var(--gb-ink); }
-.close-x, .chat-close { border-radius: 50%; box-shadow: inset 0 2px 0 #ffffff6b, inset 0 -3px 0 var(--be), 0 2px 0 var(--gb-ink); }
+.close-x { border-radius: 50%; box-shadow: inset 0 2px 0 #ffffff6b, inset 0 -3px 0 var(--be), 0 2px 0 var(--gb-ink); }
 .seg button { border-radius: 12px; }
 .action-bar span { text-shadow: 0 1px 0 #00000099; }
 
 /* Thực đơn: nút ✕ đóng ở góc phải trên */
 .panel.menu-panel { position: relative; }
 
-/* Máy tính (chat mở cố định bên trái): thanh hành động căn giữa phần màn hình bên phải khung chat, khỏi bị chat che */
+/* Máy tính (chat mở cố định bên trái): thanh hành động căn giữa màn hình; thanh dài tới mức đụng khung chat
+   thì mới đẩy sang phải vừa đủ (mép trái thanh = mép phải chat + 12px) */
 @media (min-width: 901px) and (min-height: 501px) {
   .action-bar {
-    --chat-r: calc(12px + min(320px, 50% - 220px)); /* mép phải khung chat */
-    left: calc((var(--chat-r) + 100%) / 2);
-    max-width: calc(100% - var(--chat-r) - 24px);
+    --chat-r: calc(12px + min(320px, 50vw - 220px)); /* mép phải khung chat */
+    transform: translateX(max(-50%, var(--chat-r) + 12px - 50vw));
+    max-width: calc(100vw - var(--chat-r) - 24px);
   }
 }
 

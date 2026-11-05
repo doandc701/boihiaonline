@@ -6,7 +6,7 @@ window.__boot?.(65, 'Đang dựng quán…');
 import {
   ROOMS, TABLES, STAGE, MENU, MENU_CATS, SHIRTS, HAIRS, SONG_MS, MIC_DELAY_MS,
   FLOOR_H, FLOOR_NAMES, FLOOR_BOUNDS, SHORE, BUILDING, CORE, ELEVATOR, KITCHEN, WCS, DUMBWAITER, PARKING,
-  GOLDEN_EVERY, GOLDEN_MS, MAX_SONG_MS, CHAT_MAX, seatPos, seatYaw, nearestFreeSeat, DRINKS, drinkOfTable, tabTotal,
+  MAX_SONG_MS, CHAT_MAX, seatPos, seatYaw, nearestFreeSeat, DRINKS, drinkOfTable, tabTotal,
   START_MONEY, ROUND_PRICE, VENDOR_PRICE, ITEMS, FISH_ZONE_Z, TRADER, nearTrader,
 } from '/shared/world.js';
 import { SONGS, GENRES, DEFAULT_SONG, parseYouTube } from '/shared/songs.js';
@@ -220,10 +220,11 @@ function freeSpot(f, x, z) {
 }
 
 // Trả về các điểm rẽ từ (sx,sz) tới đích (bỏ điểm xuất phát), đích bị chặn thì dừng ở ô trống gần nhất. null nếu không có đường.
-function findPath(f, sx, sz, tx, tz) {
+// staff = true: nhân viên phục vụ có chìa khoá, đi qua được cửa phòng riêng đang khoá.
+function findPath(f, sx, sz, tx, tz, staff = false) {
   const g = navGrid(f), { B, w, h } = g;
   const cells = g.cells.slice();
-  for (const d of g.doors) if (doorBlocks(d, { x: sx, z: sz })) g.markBox(d, cells);
+  if (!staff) for (const d of g.doors) if (doorBlocks(d, { x: sx, z: sz })) g.markBox(d, cells);
   const cellOf = (x, z) => [clamp(Math.round((x - B.minX) / CELL), 0, w - 1), clamp(Math.round((z - B.minZ) / CELL), 0, h - 1)];
   const free = (i, j) => i >= 0 && j >= 0 && i < w && j < h && !cells[j * w + i];
   // Ô trống gần nhất (đang đứng sát vật cản, hoặc bấm trúng bàn/tường)
@@ -1856,25 +1857,37 @@ for (const T of TABLES) {
   const hit = T.shape === 'long'
     ? box(T.len + 0.6, 1.2, T.w + 1.6, HIT_MAT, T.x, 0.6, T.z, P)
     : cyl(T.r + 0.65, T.r + 0.65, 1.2, HIT_MAT, T.x, 0.6, T.z, P);
-  clickable(hit, {
+  // Phòng đang khoá (không phải chủ): không đi xuyên cửa được, nên đi tới trước cửa rồi gõ cửa / xin vào.
+  const lockedOut = () => T.room && roomState.get(T.id)?.locked && roomState.get(T.id).owner !== myId;
+  const doorSpot = T.room && { x: T.x, z: T.room.doorZ + (T.z > T.room.doorZ ? -0.8 : 0.8) };
+  const tableRange = T.shape === 'long' ? T.len / 2 + 1.6 : T.r + 1.6;
+  const tableClick = {
     tableId: T.id,
     f: T.floor,
-    pos: () => T,
-    range: T.shape === 'long' ? T.len / 2 + 1.6 : T.r + 1.6,
+    pos: () => (lockedOut() ? doorSpot : T),
+    get range() { return lockedOut() ? 1.4 : tableRange; },
     label: () => {
       const used = seatedAt(T.id) + (T.npcSeats?.length || 0);
       const st = roomState.get(T.id);
-      if (st?.locked && st.owner !== myId) return `🔒 ${T.name} đã khoá`;
+      if (st?.locked && st.owner !== myId) return `🚪 gõ cửa <b>${T.name}</b> (đang khoá)`;
       return used >= T.seats ? `${T.name} đã đủ người` : `ngồi vào <b>${T.name}</b> (${used}/${T.seats})`;
     },
     action: () => {
       // Có chọn ghế (bấm gần ghế nào) thì xin ngồi ghế đó; ghế có người rồi thì server xếp ghế trống gần nhất.
       const idx = chosenSeat?.table === T.id ? chosenSeat.idx : undefined;
       chosenSeat = null;
+      // Phòng khoá: thử vào (người từng ngồi phòng này được vào luôn); server đòi mật mã thì gõ cửa và hỏi mã.
+      if (roomState.get(T.id)?.locked && roomState.get(T.id).owner !== myId) {
+        codeFor = { mode: 'try', table: T.id, idx };
+        return send({ t: 'sit', table: T.id, idx });
+      }
       if (idx !== undefined && !seatFree(T.id, idx)) toast('Ghế đó có người rồi, ngồi ghế trống gần nhất nhé');
       send({ t: 'sit', table: T.id, idx });
     },
-  });
+  };
+  clickable(hit, tableClick);
+  // Bấm vào cánh cửa phòng cũng như bấm vào bàn trong phòng (đang khoá thì gõ cửa).
+  if (doors.has(T.id)) clickable(doors.get(T.id), tableClick);
 }
 for (const { kind, floor, color, list } of plasticBatch.values()) {
   const im = new THREE.InstancedMesh(kind === 'table' ? tableGeo : chairGeo, plasticMats[color], list.length);
@@ -2212,13 +2225,13 @@ function addStaff(opts, name, f, x, z, yaw, extra = {}) {
 }
 // Trả về false nếu không có đường (ví dụ phòng riêng đang khoá cửa).
 function staffGo(st, x, z, then) {
-  const path = findPath(st.a.f, st.a.x, st.a.z, x, z);
+  const path = findPath(st.a.f, st.a.x, st.a.z, x, z, true);
   st.route = path ? path.slice() : [{ x, z }];
   st.then = then;
   return !!path;
 }
 // Đi tới phục vụ một bàn: thử chỗ mong muốn (vd. sau lưng khách), rồi mép bàn (bàn phòng riêng: phía cửa,
-// vì ghế bàn dài xếp kín), cuối cùng đứng ngoài cửa nếu phòng riêng đang khoá.
+// vì ghế bàn dài xếp kín). Nhân viên có chìa khoá nên vào được cả phòng đang khoá.
 function goServe(st, T, want, then) {
   if (want && staffGo(st, want.x, want.z, then)) return;
   const edge = T.room ? { x: T.x, z: T.z + Math.sign(T.room.doorZ - T.z) * ((T.shape === 'long' ? T.w / 2 : T.r) + 1) } : T;
@@ -4053,7 +4066,26 @@ function onMessage(m) {
       break;
     case 'sit-fail':
       if (m.held) { toast(`🪧 ${tableName(TABLES[m.table])} đang giữ chỗ cho nhóm vừa ra ngoài, chọn bàn khác nhé!`); break; }
-      toast(m.locked ? `🔒 ${tableName(TABLES[m.table])} đã khoá, gõ cửa cũng không ai mở đâu!` : `${tableName(TABLES[m.table])} hết ghế rồi, thử bàn khác nhé!`);
+      if (m.locked) {
+        if (m.wait) { closeModal(); toast(`🔒 Nhập sai nhiều quá, đợi ${m.wait} giây rồi thử lại nhé`); break; }
+        if (modal === 'code' && codeFor?.table === m.table) {
+          $('code-msg').textContent = m.wrong ? '❌ Sai mật mã, thử lại nhé' : '';
+          $('code-input').value = '';
+          shakeCode();
+          break;
+        }
+        // Lần đầu bị chặn ở cửa: gõ cửa (người trong phòng nghe thấy) rồi hỏi mật mã
+        knockSound();
+        send({ t: 'knock', table: m.table });
+        askCode('enter', m.table, codeFor?.table === m.table ? codeFor.idx : undefined);
+        break;
+      }
+      toast(`${tableName(TABLES[m.table])} hết ghế rồi, thử bàn khác nhé!`);
+      break;
+    case 'knock':
+      if (m.id === myId) break;
+      knockSound();
+      toast(`🚪 ${m.name} đang gõ cửa ${tableName(TABLES[m.table])}. Báo mật mã nếu muốn cho vào nhé!`);
       break;
     case 'room': {
       const prev = roomState.get(m.table);
@@ -4347,7 +4379,7 @@ function toast(msg) {
   t._h = setTimeout(() => t.classList.remove('show'), 2800);
 }
 
-const OVERLAYS = { donate: 'overlay-donate', start: 'overlay-start', menu: 'overlay-menu', songs: 'overlay-songs', settings: 'overlay-settings', elevator: 'overlay-elevator', poem: 'overlay-poem', bill: 'overlay-bill', end: 'overlay-end', leave: 'overlay-leave', pick: 'overlay-pick', fish: 'overlay-fish', bag: 'overlay-bag', bottle: 'overlay-bottle', games: 'overlay-games' };
+const OVERLAYS = { donate: 'overlay-donate', start: 'overlay-start', menu: 'overlay-menu', songs: 'overlay-songs', settings: 'overlay-settings', elevator: 'overlay-elevator', poem: 'overlay-poem', bill: 'overlay-bill', end: 'overlay-end', leave: 'overlay-leave', pick: 'overlay-pick', fish: 'overlay-fish', bag: 'overlay-bag', bottle: 'overlay-bottle', games: 'overlay-games', code: 'overlay-code' };
 function openModal(name) {
   modal = name;
   for (const [k, id] of Object.entries(OVERLAYS)) $(id).classList.toggle('hidden', k !== name);
@@ -4644,6 +4676,8 @@ function toggleDance(on = !meA?.dancing) {
 
 let chatTable = -1; // bàn đang có tin nhắn trong khung chat
 function onSitMine() {
+  if (modal === 'code') closeModal(); // vừa nhập đúng mật mã
+  codeFor = null;
   if (meA.dancing) toggleDance(false);
   voiceSeatChanged();
   tableGames.onSeatChanged();
@@ -4701,10 +4735,10 @@ for (const s of ['table', 'all']) {
   };
 }
 
-// Màn hình nhỏ (điện thoại dọc hoặc ngang) thì chat thu gọn thành nút 💬, bấm mới mở.
+// Khung chat đóng/mở được: thu gọn thành nút 💬 (có số tin chưa đọc), bấm mới mở, ✕ để thu lại.
 const chatMQ = matchMedia('(max-width: 900px), (max-height: 500px)');
-let chatCollapsed = true;
-const chatFolded = () => chatMQ.matches && chatCollapsed;
+let chatCollapsed = true; // mặc định đóng chat, bấm 💬 hoặc Enter để mở
+const chatFolded = () => chatCollapsed;
 // Số tin chưa đọc trên nút (thay cho chấm đỏ); add = true thì cộng dồn.
 function setBadge(btn, n, add = false) {
   const b = btn.querySelector('.badge');
@@ -4715,7 +4749,6 @@ function setBadge(btn, n, add = false) {
 }
 function applyChatLayout() {
   const chat = $('chat'), btn = $('chat-toggle');
-  chat.classList.toggle('compact', chatMQ.matches);
   chat.classList.toggle('collapsed', chatFolded());
   btn.setAttribute('aria-expanded', !chatFolded());
   if (!chatFolded()) {
@@ -4733,7 +4766,7 @@ $('chat-toggle').onclick = (e) => {
   setChatOpen(true);
   e.currentTarget.blur();
 };
-$('chat-close').onclick = (e) => { // ✕ trong khung chat (điện thoại): thu gọn lại thành nút 💬
+$('chat-close').onclick = (e) => { // ‹ ở mép khung chat: thu gọn lại thành nút 💬
   setChatOpen(false);
   e.currentTarget.blur();
 };
@@ -5002,9 +5035,54 @@ function renderLockButton() {
   b.classList.toggle('hidden', !show);
   if (show) b.textContent = st.locked ? '🔓 Mở khoá phòng' : '🔒 Khoá phòng';
 }
+// Mật mã 4 số: chủ phòng đặt khi khoá; người ngoài gõ cửa rồi nhập đúng mới vào được.
+let codeFor = null; // { mode: 'lock' | 'enter', table, idx }
+function askCode(mode, table, idx) {
+  codeFor = { mode, table, idx };
+  const T = TABLES[table];
+  $('code-title').textContent = mode === 'lock' ? '🔒 Khoá phòng' : `🚪 ${T.name} đang khoá`;
+  $('code-sub').textContent = mode === 'lock'
+    ? 'Đặt mật mã 4 chữ số. Ai biết mật mã mới vào được, nhân viên phục vụ vẫn vào bình thường.'
+    : 'Cốc cốc! Đã gõ cửa. Nhập mật mã 4 số chủ phòng đặt để vào.';
+  $('code-msg').textContent = '';
+  $('code-input').value = '';
+  $('btn-code-ok').textContent = mode === 'lock' ? '🔒 Khoá' : '🔑 Vào phòng';
+  openModal('code');
+  setTimeout(() => $('code-input').focus(), 50);
+}
+function submitCode() {
+  if (!codeFor) return closeModal();
+  const code = $('code-input').value.trim();
+  if (!/^\d{4}$/.test(code)) {
+    $('code-msg').textContent = 'Mật mã gồm đúng 4 chữ số';
+    return shakeCode();
+  }
+  if (codeFor.mode === 'lock') {
+    send({ t: 'room-lock', locked: true, code });
+    closeModal();
+  } else {
+    send({ t: 'sit', table: codeFor.table, idx: codeFor.idx, code });
+    $('code-msg').textContent = 'Đang mở cửa…';
+  }
+}
+function shakeCode() {
+  const p = $('overlay-code').querySelector('.panel');
+  p.classList.remove('shake');
+  void p.offsetWidth;
+  p.classList.add('shake');
+}
+$('code-input').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4); });
+$('code-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') submitCode(); if (e.key === 'Escape') closeModal(); });
+$('btn-code-ok').onclick = submitCode;
+$('btn-code-cancel').onclick = closeModal;
+function knockSound() {
+  for (let i = 0; i < 3; i++) setTimeout(() => noiseHit(0.08, 700, 0.5, 'lowpass'), i * 170);
+}
 $('btn-lock').onclick = () => {
   const st = roomState.get(meA?.seat?.table);
-  if (st) send({ t: 'room-lock', locked: !st.locked });
+  if (!st) return;
+  if (st.locked) send({ t: 'room-lock', locked: false });
+  else askCode('lock', meA.seat.table);
 };
 
 // Ở trong nhà thì ẩn các tầng phía trên và tường mặt tiền tầng đang đứng (kiểu cắt lớp như The Sims).
@@ -5529,8 +5607,10 @@ function stepCatch(h) {
 // hộp câu cá ở dưới không che). Lúc chiếu đoạn kéo cá: nhìn ngang từ bên trái, thấy cả người lẫn phao, lia chậm ra biển.
 const cineCam = new THREE.Vector3(), cineLook = new THREE.Vector3(), cineCur = new THREE.Vector3(), cineLookCur = new THREE.Vector3();
 let cineOn = false;
+let fairBase = null; // góc camera thường lúc vào góc nhìn trò chơi: kéo/zoom trong lúc chơi tính lệch từ đây, hết trò trả lại
 function cinematicCamera(dt) {
   const fairT = !catchFx && modal !== 'fish' && meA?.seat ? tableGames.fairView() : null;
+  if (fairT === null && fairBase) { Object.assign(cam, fairBase); fairBase = null; }
   if (!meA || (!catchFx && modal !== 'fish' && fairT === null)) { cineOn = false; return false; }
   const y0 = meA.f * FLOOR_H;
   if (fairT !== null) {
@@ -5544,7 +5624,12 @@ function cinematicCamera(dt) {
     // Màn hình dọc (điện thoại): bảng trò chơi nằm dưới, nên nhìn vào điểm lệch về phía mình để bàn nằm nửa trên.
     const shift = camera.aspect < 1 ? (R + 0.9) * 0.7 : 0;
     cineLook.set(T.x + (dx / d) * shift, y0 + 0.6, T.z + (dz / d) * shift);
-    cineCam.set(cineLook.x + (dx / d) * fit * 0.35, y0 + 0.6 + fit * 0.94, cineLook.z + (dz / d) * fit * 0.35);
+    // Mặc định đứng sau ghế mình, gần như thẳng đứng; kéo chuột/vuốt để xoay quanh bàn, lăn/chụm để zoom
+    if (!fairBase) fairBase = { yaw: cam.yaw, pitch: cam.pitch, dist: cam.dist };
+    const yaw = Math.atan2(dx, dz) + (cam.yaw - fairBase.yaw);
+    const elev = THREE.MathUtils.clamp(1.21 + (cam.pitch - fairBase.pitch), 0.35, 1.5);
+    const r = fit * cam.dist / fairBase.dist;
+    cineCam.set(cineLook.x + Math.sin(yaw) * Math.cos(elev) * r, cineLook.y + Math.sin(elev) * r, cineLook.z + Math.cos(yaw) * Math.cos(elev) * r);
   } else if (catchFx) {
     const ft = catchFx.t, a = -1.95 + Math.min(ft, 3.5) * 0.1;
     cineLook.set(meA.rx + 0.3, y0 + 1.1 + (catchFx.it && ft > 0.4 ? 0.35 : 0), meA.rz + 1.7);
@@ -5705,10 +5790,9 @@ function openMenu() {
   openModal('menu');
 }
 
-// Mỗi lần có người dzô: âm thanh + đếm cho giờ vàng.
+// Mỗi lần có người dzô: âm thanh.
 function onAnyAct(a, k) {
   if (k === 'cheers') {
-    if (golden.active) golden.count++;
     if (a !== meA && meA.seat && a.seat?.table === meA.seat.table && !aloneAt(a)) dzoCallSound(0.7);
   }
   if (k === 'clap' && a !== meA && Math.hypot(a.rx - meA.rx, a.rz - meA.rz) < 8) clapSound();
@@ -5810,36 +5894,9 @@ function closeEnd() {
   else closeModal();
 }
 
-// ================= Giờ vàng =================
-const golden = { active: false, count: 0, startedFor: -1 };
-function updateGolden() {
-  const now = serverNow();
-  const phase = now % GOLDEN_EVERY;
-  const slot = Math.floor(now / GOLDEN_EVERY);
-  const el = $('golden');
-  if (phase < GOLDEN_MS && state.started) {
-    if (golden.startedFor !== slot) {
-      golden.startedFor = slot;
-      golden.count = 0;
-      golden.active = true;
-    }
-    const sec = Math.floor(phase / 1000);
-    el.classList.remove('hidden');
-    el.innerHTML = sec < 3
-      ? `<div class="sub-text">⭐ GIỜ VÀNG · cả quán cùng dzô ⭐</div><div class="big-text">${3 - sec}</div>`
-      : `<div class="big-text">DZÔ!!!</div><div class="sub-text">${golden.count} lượt dzô cùng lúc${meA.seat ? ' · bấm 1 để dzô' : ' · ngồi vào bàn để dzô'}</div>`;
-    $('golden-timer').textContent = '';
-  } else {
-    golden.active = false;
-    el.classList.add('hidden');
-    const left = Math.ceil((GOLDEN_EVERY - phase) / 1000);
-    $('golden-timer').textContent = `⭐ Giờ vàng sau ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
-  }
-}
-
 // ================= Trò chơi cùng bàn (public/tablegames.js) =================
 const tableGames = createTableGames({
-  THREE, $, send, toast, speak, fmt, escapeHtml, actorById, TABLES, seatPos, floors, serverNow,
+  THREE, $, send, toast, speak, fmt, escapeHtml, actorById, TABLES, seatPos, floors, serverNow, playAct,
   openModal, closeModal,
   me: () => meA, myId: () => myId, online: () => net.online,
   // Thua: server đã tính ly phạt vào hoá đơn; ở đây rót đầy rồi uống cạn một mình (đang gục thì thôi).
@@ -5862,7 +5919,7 @@ const ACTIONS = {
   stand: () => meA?.seat && !modal && askStand(),
   dance: () => toggleDance(),
   invite: invitePick,
-  games: () => !modal && tableGames.openPicker(),
+  games: () => !modal && !document.querySelector('[data-act="games"]').disabled && tableGames.openPicker(),
   fish: startFishing,
   voiceMic: () => toggleVoiceMic(),
 };
@@ -6190,8 +6247,11 @@ let lastDayK = -1;
 function updateDayNight() {
   const h = vnHours(), k = dayFactor(h);
   const hh = Math.floor(h), mm = Math.floor((h - hh) * 60);
-  $('clock').textContent = `${k >= 0.5 ? '☀️' : '🌙'} ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')} · ${
-    k === 1 ? 'Ban ngày' : k === 0 ? 'Ban đêm' : h < 12 ? 'Bình minh' : 'Hoàng hôn'}`;
+  // Đồng hồ gọn: biểu tượng theo buổi + giờ:phút (giờ Việt Nam); tên buổi để trong chú thích khi rê chuột.
+  const part = k === 1 ? 'Ban ngày' : k === 0 ? 'Ban đêm' : h < 12 ? 'Bình minh' : 'Hoàng hôn';
+  const icon = k === 1 ? '☀️' : k === 0 ? '🌙' : h < 12 ? '🌅' : '🌇';
+  $('clock').textContent = `${icon} ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+  $('clock').title = `${part} · giờ Việt Nam`;
   if (Math.abs(k - lastDayK) < 0.01) return;
   lastDayK = k;
   setSceneDay(k);
@@ -6208,21 +6268,17 @@ if (isTouch) {
     <li><b>Chạm bàn</b> để ngồi vào ghế trống, chạm <b>👆 gợi ý</b> giữa màn hình để tương tác</li>
     <li>Ngồi rồi: thanh dưới cùng để <b>dzô</b>, <b>rót</b>, <b>gọi mồi</b>, <b>nước lọc</b>, <b>đứng dậy</b></li>
     <li>Chạm người khác để <b>mời một ly</b> · nút 💸 để tính tiền</li>
-    <li>Lên <b>sân khấu karaoke</b> trên sân thượng để hát. Mỗi 10 phút có <b>giờ vàng</b>, cả quán cùng dzô</li>`;
+    <li>Lên <b>sân khấu karaoke</b> trên sân thượng để hát · nút 🎲 rủ cả bàn chơi trò chơi</li>`;
   $('chat-input').placeholder = 'Nhắn cho cả bàn…';
 }
 $('prompt').addEventListener('click', () => interact());
-// Tên ngẫu nhiên kiểu quán nhậu, người chơi đổi lại tuỳ ý.
-const NAME_FIRST = ['Tuấn', 'Hùng', 'Lan', 'Minh', 'Thảo', 'Dũng', 'Hải', 'Ngọc', 'Long', 'Phúc', 'Vy', 'Toàn', 'Quân', 'Trang', 'Khoa', 'Nam', 'Hương', 'Tú', 'Đạt', 'Mai', 'Sơn', 'Linh', 'Cường', 'Huy', 'Yến', 'Kiên', 'Thu', 'Bình', 'Tâm', 'Hiếu'];
-const NAME_NICK = ['Béo', 'Còi', 'Hói', 'Râu', 'Xồm', 'Lùn', 'Tửng', 'Bột', 'Ken', 'Mập', 'Dzô', 'Bia', 'Mồi', 'Sún', 'Lầy', 'Cạn', 'Ròm', 'Đô'];
-const randomName = () => `${pick(NAME_FIRST)} ${pick(NAME_NICK)}`;
+// Tên do người chơi tự điền (không có tên ngẫu nhiên); vào lần sau điền sẵn tên đã dùng.
 function setName(v) {
   $('player-name').value = v;
   $('player-name').classList.remove('invalid');
   $('preview-name').textContent = v.trim() || '…';
 }
 $('player-name').addEventListener('input', () => setName($('player-name').value));
-$('btn-name-dice').onclick = () => setName(randomName());
 function askName(msg) {
   $('start-msg').textContent = msg;
   $('player-name').classList.add('invalid');
@@ -6475,7 +6531,7 @@ applyQuality();
 {
   try {
     const saved = localStorage.getItem('nhau3d-name');
-    setName(saved && saved !== 'Khách' ? saved : randomName()); // "Khách" là tên mặc định cũ, không giữ
+    setName(saved && saved !== 'Khách' ? saved : ''); // "Khách" là tên mặc định cũ, không giữ
     Object.assign(state.look, JSON.parse(localStorage.getItem('nhau3d-look')) || {});
   } catch {}
   const qRoom = new URLSearchParams(location.search).get('room');
@@ -6872,6 +6928,10 @@ function updateFocus() {
   $('btn-stand').classList.toggle('hidden', !seated);
   $('btn-fish').classList.toggle('hidden', !canFish());
   $('btn-invite').classList.toggle('hidden', !seated || !tableMates().length); // bàn từ 2 người trở lên mới mời ly được
+  // Trò chơi cùng bàn cần ít nhất 2 người chơi thật (không tính nhân viên, khách ảo)
+  const gamesBtn = document.querySelector('[data-act="games"]'), canGame = seated && tableMates().some((o) => !npcs.includes(o));
+  gamesBtn.disabled = !canGame;
+  gamesBtn.title = canGame ? 'Trò chơi cùng bàn (9)' : 'Cần ít nhất 2 người ngồi cùng bàn mới chơi được';
   $('chat').classList.toggle('hidden', !state.started);
   $('chat-tab-table').disabled = !seated;
   if (!meA || modal || !state.started || meA.seat) { el.classList.add('hidden'); return; }
@@ -7006,7 +7066,6 @@ function loop() {
   for (const a of [...allActors(), ...npcs]) updateActor(a, dt, t);
   if (state.started) {
     updateChatter(dt);
-    updateGolden();
     sendMove();
   }
   updateVisibility();
@@ -7028,4 +7087,4 @@ loop();
 // Dùng cho kiểm thử trong console
 window.__beachFirst = () => [...beachItems.values()][0]?.it;
 window.__bgmEl = () => bgmEl;
-window.__nhau = { state, popups: { openDonate, openBag, openSettings, showBill, openMenu, openPoem, askStand, invitePick, rideMenu: () => openFloorPicker("🛗 Thang máy", [0, 1, 2], rideElevator), openModal, songs: () => openSongPicker(true), games: () => tableGames.openPicker() }, lockState: () => ({ modal, paying, payPause, riding, wcBusy, busy: !!busy, passedOut: state.passedOut, fade: +($('fade').style.opacity || 0), started: state.started, fishing: modal === 'fish', cine: !!catchFx }), openSongPicker, FX, playCatch, stepCatch, get catchFx() { return catchFx; }, endCatch, showCatch, fishGame, rideElevator, cam, audioInfo: () => ({ bgmFile: bgmEl && { t: +bgmEl.currentTime.toFixed(2), paused: bgmEl.paused }, bgmStep: BGM.step, music: buses.music?.gain.value, karaoke: buses.karaoke?.gain.value, video: tv.player?.getVolume?.(), ctx: audio?.state }), get me() { return meA; }, walkTo, findPath, get localPlaying() { return !!local.src && { t: +(audio.currentTime - local.at).toFixed(1), dur: +local.buf.duration.toFixed(1), gain: +local.gain.gain.value.toFixed(2) }; }, remotes, TABLES, send, cheers, emote, get mic() { return mic; }, tv, screenVideoEl, local, get audio() { return audio; }, DZO, tabs, trader, staff };
+window.__nhau = { state, clickDoor: (id) => goTo({ info: doors.get(id).userData.click }), doorScreen: (id) => { const v = new THREE.Vector3(); doors.get(id).getWorldPosition(v); v.project(camera); return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight }; }, popups: { openDonate, openBag, openSettings, showBill, openMenu, openPoem, askStand, invitePick, rideMenu: () => openFloorPicker("🛗 Thang máy", [0, 1, 2], rideElevator), openModal, songs: () => openSongPicker(true), games: () => tableGames.openPicker() }, lockState: () => ({ modal, paying, payPause, riding, wcBusy, busy: !!busy, passedOut: state.passedOut, fade: +($('fade').style.opacity || 0), started: state.started, fishing: modal === 'fish', cine: !!catchFx }), openSongPicker, FX, playCatch, stepCatch, get catchFx() { return catchFx; }, endCatch, showCatch, fishGame, rideElevator, cam, audioInfo: () => ({ bgmFile: bgmEl && { t: +bgmEl.currentTime.toFixed(2), paused: bgmEl.paused }, bgmStep: BGM.step, music: buses.music?.gain.value, karaoke: buses.karaoke?.gain.value, video: tv.player?.getVolume?.(), ctx: audio?.state }), get me() { return meA; }, walkTo, findPath, get localPlaying() { return !!local.src && { t: +(audio.currentTime - local.at).toFixed(1), dur: +local.buf.duration.toFixed(1), gain: +local.gain.gain.value.toFixed(2) }; }, remotes, TABLES, send, cheers, emote, get mic() { return mic; }, tv, screenVideoEl, local, get audio() { return audio; }, DZO, tabs, trader, staff };
