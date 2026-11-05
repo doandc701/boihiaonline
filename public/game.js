@@ -11,6 +11,7 @@ import {
 } from '/shared/world.js';
 import { SONGS, GENRES, DEFAULT_SONG, parseYouTube } from '/shared/songs.js';
 import { createVoice } from './voice.js';
+import { createTableGames } from './tablegames.js';
 
 // ================= Cấu hình =================
 // Tài khoản nhận ủng hộ ("Bao chủ quán một ly"), ảnh QR ở public/donate-qr.png.
@@ -4219,6 +4220,9 @@ function onMessage(m) {
       net.restarting = true; // server sắp tắt để lên bản mới: lát nữa tự nối lại
       toast('🔧 Quán đang nâng cấp, vài giây nữa vào lại…');
       break;
+    case 'game':
+      tableGames.onGame(m);
+      break;
     case 'voice-token':
       voice.join(m.scope, m.table, m.url, m.token);
       break;
@@ -4343,7 +4347,7 @@ function toast(msg) {
   t._h = setTimeout(() => t.classList.remove('show'), 2800);
 }
 
-const OVERLAYS = { donate: 'overlay-donate', start: 'overlay-start', menu: 'overlay-menu', songs: 'overlay-songs', settings: 'overlay-settings', elevator: 'overlay-elevator', poem: 'overlay-poem', bill: 'overlay-bill', end: 'overlay-end', leave: 'overlay-leave', pick: 'overlay-pick', fish: 'overlay-fish', bag: 'overlay-bag', bottle: 'overlay-bottle' };
+const OVERLAYS = { donate: 'overlay-donate', start: 'overlay-start', menu: 'overlay-menu', songs: 'overlay-songs', settings: 'overlay-settings', elevator: 'overlay-elevator', poem: 'overlay-poem', bill: 'overlay-bill', end: 'overlay-end', leave: 'overlay-leave', pick: 'overlay-pick', fish: 'overlay-fish', bag: 'overlay-bag', bottle: 'overlay-bottle', games: 'overlay-games' };
 function openModal(name) {
   modal = name;
   for (const [k, id] of Object.entries(OVERLAYS)) $(id).classList.toggle('hidden', k !== name);
@@ -4642,6 +4646,7 @@ let chatTable = -1; // bàn đang có tin nhắn trong khung chat
 function onSitMine() {
   if (meA.dancing) toggleDance(false);
   voiceSeatChanged();
+  tableGames.onSeatChanged();
   if (paying) setPaying(false); // đang đi thanh toán mà bấm E ngồi lại bàn thì thôi
   pourPending = false;
   updateBillButton();
@@ -4678,7 +4683,7 @@ function setChatScope(scope) {
     const tab = $(`chat-tab-${s}`);
     tab.classList.toggle('on', s === scope);
     tab.setAttribute('aria-selected', s === scope);
-    if (s === scope) tab.querySelector('.badge').classList.add('hidden');
+    if (s === scope) setBadge(tab, 0);
   }
   $('chat-log').classList.toggle('hidden', scope !== 'table');
   $('chat-log-all').classList.toggle('hidden', scope !== 'all');
@@ -4700,13 +4705,21 @@ for (const s of ['table', 'all']) {
 const chatMQ = matchMedia('(max-width: 900px), (max-height: 500px)');
 let chatCollapsed = true;
 const chatFolded = () => chatMQ.matches && chatCollapsed;
+// Số tin chưa đọc trên nút (thay cho chấm đỏ); add = true thì cộng dồn.
+function setBadge(btn, n, add = false) {
+  const b = btn.querySelector('.badge');
+  const v = add ? (Number(b.dataset.n) || 0) + n : n;
+  b.dataset.n = v;
+  b.textContent = v > 99 ? '99+' : v;
+  b.classList.toggle('hidden', !v);
+}
 function applyChatLayout() {
   const chat = $('chat'), btn = $('chat-toggle');
   chat.classList.toggle('compact', chatMQ.matches);
   chat.classList.toggle('collapsed', chatFolded());
   btn.setAttribute('aria-expanded', !chatFolded());
   if (!chatFolded()) {
-    btn.querySelector('.badge').classList.add('hidden');
+    setBadge(btn, 0);
     const log = chatScope === 'all' ? $('chat-log-all') : $('chat-log');
     log.scrollTop = log.scrollHeight;
   }
@@ -4728,11 +4741,24 @@ chatMQ.addEventListener('change', applyChatLayout);
 applyChatLayout();
 
 function addChatLine(name, text, scope = 'table') {
-  const log = scope === 'all' ? $('chat-log-all') : $('chat-log');
-  if (scope !== chatScope && name) $(`chat-tab-${scope}`).querySelector('.badge').classList.remove('hidden');
-  if (chatFolded() && name) $('chat-toggle').querySelector('.badge').classList.remove('hidden');
+  // Tin cả quán lúc đang ngồi bàn: hiện luôn trong tab Bàn, có nhãn [Cả quán] (tab 🌐 vẫn giữ đủ tin).
+  const mirror = scope === 'all' && name && meA?.seat;
+  const seen = scope === chatScope || (mirror && chatScope === 'table');
+  const other = name && name !== 'Bạn'; // tin của chính mình không tính là chưa đọc
+  if (!seen && other) setBadge($(`chat-tab-${scope}`), 1, true);
+  if (chatFolded() && other) setBadge($('chat-toggle'), 1, true);
+  appendChatLine(scope === 'all' ? $('chat-log-all') : $('chat-log'), name, text);
+  if (mirror) appendChatLine($('chat-log'), name, text, true);
+}
+function appendChatLine(log, name, text, fromAll = false) {
   const line = document.createElement('div');
   if (name) {
+    if (fromAll) {
+      const tag = document.createElement('span');
+      tag.className = 'ch-all';
+      tag.textContent = '[Cả quán]';
+      line.appendChild(tag);
+    }
     const b = document.createElement('b');
     b.textContent = name + ': ';
     line.append(b, text);
@@ -4764,6 +4790,7 @@ $('chat-input').addEventListener('keydown', (e) => {
 });
 function onStandMine(T) {
   voiceSeatChanged();
+  tableGames.onSeatChanged();
   const dx = meA.x - T.x, dz = meA.z - T.z, d = Math.hypot(dx, dz) || 1;
   placeAt(meA, T.x + (dx / d) * 1.75, T.z + (dz / d) * 1.75);
   busy = null;
@@ -5503,9 +5530,22 @@ function stepCatch(h) {
 const cineCam = new THREE.Vector3(), cineLook = new THREE.Vector3(), cineCur = new THREE.Vector3(), cineLookCur = new THREE.Vector3();
 let cineOn = false;
 function cinematicCamera(dt) {
-  if (!meA || (!catchFx && modal !== 'fish')) { cineOn = false; return false; }
+  const fairT = !catchFx && modal !== 'fish' && meA?.seat ? tableGames.fairView() : null;
+  if (!meA || (!catchFx && modal !== 'fish' && fairT === null)) { cineOn = false; return false; }
   const y0 = meA.f * FLOOR_H;
-  if (catchFx) {
+  if (fairT !== null) {
+    // Trò chơi cần nhìn công bằng (chai chỉ vào ai, xí ngầu, bốc thăm, oẳn tù tì lộ bài): máy lên cao nhìn
+    // xuống giữa bàn, thấy đủ mọi ghế; đặt lệch về phía ghế mình để hướng nhìn quen thuộc.
+    const T = TABLES[fairT], s = seatPos(T, meA.seat.idx);
+    let R = 0;
+    for (let i = 0; i < T.seats; i++) { const p = seatPos(T, i); R = Math.max(R, Math.hypot(p.x - T.x, p.z - T.z)); }
+    const dx = s.x - T.x, dz = s.z - T.z, d = Math.hypot(dx, dz) || 1;
+    const fit = (R + 0.9) / Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) / Math.min(1, camera.aspect);
+    // Màn hình dọc (điện thoại): bảng trò chơi nằm dưới, nên nhìn vào điểm lệch về phía mình để bàn nằm nửa trên.
+    const shift = camera.aspect < 1 ? (R + 0.9) * 0.7 : 0;
+    cineLook.set(T.x + (dx / d) * shift, y0 + 0.6, T.z + (dz / d) * shift);
+    cineCam.set(cineLook.x + (dx / d) * fit * 0.35, y0 + 0.6 + fit * 0.94, cineLook.z + (dz / d) * fit * 0.35);
+  } else if (catchFx) {
     const ft = catchFx.t, a = -1.95 + Math.min(ft, 3.5) * 0.1;
     cineLook.set(meA.rx + 0.3, y0 + 1.1 + (catchFx.it && ft > 0.4 ? 0.35 : 0), meA.rz + 1.7);
     cineCam.set(cineLook.x + Math.sin(a) * 4, cineLook.y + 0.55, cineLook.z + Math.cos(a) * 4);
@@ -5797,6 +5837,21 @@ function updateGolden() {
   }
 }
 
+// ================= Trò chơi cùng bàn (public/tablegames.js) =================
+const tableGames = createTableGames({
+  THREE, $, send, toast, speak, fmt, escapeHtml, actorById, TABLES, seatPos, floors, serverNow,
+  openModal, closeModal,
+  me: () => meA, myId: () => myId, online: () => net.online,
+  // Thua: server đã tính ly phạt vào hoá đơn; ở đây rót đầy rồi uống cạn một mình (đang gục thì thôi).
+  penaltyDrink: function drinkPenalty() {
+    if (!meA?.seat || state.passedOut) return;
+    if (busy) return setTimeout(drinkPenalty, 500);
+    setFill(0.95);
+    speak(meA, '😵 Phạt 1 ly!', 2000);
+    drinkUp(true);
+  },
+});
+
 // ================= Điều khiển =================
 const keys = {};
 const ACTIONS = {
@@ -5807,6 +5862,7 @@ const ACTIONS = {
   stand: () => meA?.seat && !modal && askStand(),
   dance: () => toggleDance(),
   invite: invitePick,
+  games: () => !modal && tableGames.openPicker(),
   fish: startFishing,
   voiceMic: () => toggleVoiceMic(),
 };
@@ -5838,7 +5894,7 @@ addEventListener('keydown', (e) => {
   }
   const map = {
     Digit1: 'cheers', Space: 'cheers', Digit3: 'wave', Digit4: 'clap',
-    Digit5: 'menu', KeyM: 'menu', Digit6: 'water', KeyN: 'water', KeyE: 'interact', Digit7: 'dance', Digit8: 'invite', KeyF: 'fish', KeyV: 'voiceMic',
+    Digit5: 'menu', KeyM: 'menu', Digit6: 'water', KeyN: 'water', KeyE: 'interact', Digit7: 'dance', Digit8: 'invite', Digit9: 'games', KeyF: 'fish', KeyV: 'voiceMic',
   };
   if (map[e.code]) {
     e.preventDefault();
@@ -6358,7 +6414,6 @@ for (const el of document.querySelectorAll('#overlay-settings [data-set]')) {
 let settingsReturn = null;
 function openSettings() {
   settingsReturn = modal;
-  $('controls-copy').innerHTML = $('controls-list').innerHTML;
   renderSettings();
   openModal('settings');
 }
@@ -6401,7 +6456,6 @@ async function copyAccount() {
   toast(ok ? 'Đã sao chép số tài khoản 🍻' : 'Không chép tự động được, bạn giữ vào số tài khoản để sao chép nhé');
 }
 $('btn-donate').onclick = openDonate;
-$('btn-start-donate').onclick = openDonate;
 $('btn-donate-close').onclick = closeDonate;
 $('btn-copy-account').onclick = copyAccount;
 function openPoem(i) {
@@ -6945,6 +6999,7 @@ function loop() {
   updateEating(dt);
   updateStaff(dt);
   updateStageFx(dt, t);
+  tableGames.update();
   updateBeachItems(t);
   updateFishGame(dt);
   updateFishing(dt, t);
@@ -6973,4 +7028,4 @@ loop();
 // Dùng cho kiểm thử trong console
 window.__beachFirst = () => [...beachItems.values()][0]?.it;
 window.__bgmEl = () => bgmEl;
-window.__nhau = { state, lockState: () => ({ modal, paying, payPause, riding, wcBusy, busy: !!busy, passedOut: state.passedOut, fade: +($('fade').style.opacity || 0), started: state.started, fishing: modal === 'fish', cine: !!catchFx }), openSongPicker, FX, playCatch, stepCatch, get catchFx() { return catchFx; }, endCatch, showCatch, fishGame, rideElevator, cam, audioInfo: () => ({ bgmFile: bgmEl && { t: +bgmEl.currentTime.toFixed(2), paused: bgmEl.paused }, bgmStep: BGM.step, music: buses.music?.gain.value, karaoke: buses.karaoke?.gain.value, video: tv.player?.getVolume?.(), ctx: audio?.state }), get me() { return meA; }, walkTo, findPath, get localPlaying() { return !!local.src && { t: +(audio.currentTime - local.at).toFixed(1), dur: +local.buf.duration.toFixed(1), gain: +local.gain.gain.value.toFixed(2) }; }, remotes, TABLES, send, cheers, emote, get mic() { return mic; }, tv, screenVideoEl, local, get audio() { return audio; }, DZO, tabs, trader, staff };
+window.__nhau = { state, popups: { openDonate, openBag, openSettings, showBill, openMenu, openPoem, askStand, invitePick, rideMenu: () => openFloorPicker("🛗 Thang máy", [0, 1, 2], rideElevator), openModal, songs: () => openSongPicker(true), games: () => tableGames.openPicker() }, lockState: () => ({ modal, paying, payPause, riding, wcBusy, busy: !!busy, passedOut: state.passedOut, fade: +($('fade').style.opacity || 0), started: state.started, fishing: modal === 'fish', cine: !!catchFx }), openSongPicker, FX, playCatch, stepCatch, get catchFx() { return catchFx; }, endCatch, showCatch, fishGame, rideElevator, cam, audioInfo: () => ({ bgmFile: bgmEl && { t: +bgmEl.currentTime.toFixed(2), paused: bgmEl.paused }, bgmStep: BGM.step, music: buses.music?.gain.value, karaoke: buses.karaoke?.gain.value, video: tv.player?.getVolume?.(), ctx: audio?.state }), get me() { return meA; }, walkTo, findPath, get localPlaying() { return !!local.src && { t: +(audio.currentTime - local.at).toFixed(1), dur: +local.buf.duration.toFixed(1), gain: +local.gain.gain.value.toFixed(2) }; }, remotes, TABLES, send, cheers, emote, get mic() { return mic; }, tv, screenVideoEl, local, get audio() { return audio; }, DZO, tabs, trader, staff };

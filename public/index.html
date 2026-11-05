@@ -203,6 +203,7 @@
           <button data-act="wave" title="Vẫy chào (3)"><kbd>3</kbd><b>👋</b><span>Chào</span></button>
           <button data-act="clap" title="Vỗ tay (4)"><kbd>4</kbd><b>👏</b><span>Vỗ tay</span></button>
           <button data-act="dance" id="btn-dance" title="Nhảy theo nhạc (7)"><kbd>7</kbd><b>💃</b><span>Nhảy</span></button>
+          <button data-act="games" class="seat-only hidden" title="Trò chơi cùng bàn (9)"><kbd>9</kbd><b>🎲</b><span>Trò chơi</span></button>
         </div>
       </div>
       <button data-act="fish" id="btn-fish" class="hidden fish-btn ab-solid ab-blue" title="Câu cá (F)"><kbd>F</kbd><b>🎣</b><span>Câu cá</span></button>
@@ -216,8 +217,8 @@
       <!-- Khung chat kiểu game mobile: cột tab dọc bên trái (👥 bàn, 🌐 cả quán), tin nhắn bên phải, ô nhập dưới cùng -->
       <div class="chat-panel">
         <div class="chat-tabs" role="tablist" aria-label="Kênh chat" aria-orientation="vertical">
-          <button id="chat-tab-table" type="button" role="tab" data-scope="table" title="Chat với cả bàn"><b class="ic">👥</b><i class="badge hidden"></i></button>
           <button id="chat-tab-all" type="button" role="tab" data-scope="all" title="Chat với cả quán"><b class="ic">🌐</b><i class="badge hidden"></i></button>
+          <button id="chat-tab-table" type="button" role="tab" data-scope="table" title="Chat với cả bàn"><b class="ic">👥</b><i class="badge hidden"></i></button>
         </div>
         <div class="chat-main">
           <button id="chat-close" type="button" class="chat-close" title="Thu gọn chat" aria-label="Thu gọn chat">✕</button>
@@ -264,18 +265,6 @@
 
       <button id="btn-enter" class="big">🚪 Vào quán</button>
 
-      <details class="controls">
-        <summary>Cách chơi</summary>
-        <ul id="controls-list">
-          <li><b>Click sàn</b> hoặc <b>WASD</b> để đi · <b>kéo</b> để xoay · <b>lăn chuột</b> để zoom</li>
-          <li><b>Click bàn</b> (hoặc <b>E</b>) để ngồi vào ghế trống</li>
-          <li>Ngồi rồi: <b>1</b> dzô (ly rỗng thì em rót bia tới rót trước) · <b>5</b> gọi mồi · <b>6</b> nước lọc · <b>B</b> tính tiền</li>
-          <li><b>8</b> chọn người cùng bàn để mời một ly, đồng ý là cả bàn dzô · <b>3</b> vẫy chào · <b>4</b> vỗ tay</li>
-          <li>Lên <b>sân khấu karaoke</b> xếp hàng hát. Mỗi 10 phút có <b>giờ vàng</b>, cả quán cùng dzô</li>
-        </ul>
-      </details>
-      <p id="stats" class="small"></p>
-      <p class="row-btns"><button id="btn-start-donate" class="donate-btn">🍺 Bao chủ quán một ly</button></p>
     </div>
   </div>
 
@@ -375,6 +364,27 @@
     </div>
   </div>
 
+  <div id="overlay-games" class="overlay hidden">
+    <div class="panel games-panel">
+      <h2>🎲 Trò chơi cùng bàn</h2>
+      <p class="sub">Rủ cả bàn chơi, thua thì uống cạn một ly!</p>
+      <div id="games-list" class="games-list"></div>
+      <div id="games-bet-row" class="field">Cược <div id="games-bets" class="seg"></div></div>
+      <div class="row-btns">
+        <button id="btn-games-go">🎲 Rủ cả bàn</button>
+        <button id="btn-games-close" class="ghost">Đóng</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="game-panel" class="game-panel hidden" role="region" aria-label="Trò chơi cùng bàn">
+    <div class="game-head"><b id="game-title"></b><button id="btn-game-hide" class="ghost" title="Ẩn bảng">▾</button></div>
+    <div class="game-timer"><i id="game-timer"></i></div>
+    <div id="game-players" class="game-players"></div>
+    <p id="game-status" class="game-status"></p>
+    <div id="game-actions" class="game-actions"></div>
+  </div>
+
   <div id="overlay-poem" class="overlay hidden">
     <div class="panel poem-panel">
       <h2 id="poem-title">📜 Thơ nhậu</h2>
@@ -439,9 +449,20 @@
         <label class="toggle"><input type="checkbox" data-set="names"><span>Hiện tên mọi người trên đầu</span></label>
       </section>
 
-      <details class="controls">
+      <section>
+        <h3>📊 Thành tích</h3>
+        <p id="stats" class="small"></p>
+      </section>
+
+      <details class="controls" open>
         <summary>🎮 Cách chơi</summary>
-        <ul id="controls-copy"></ul>
+        <ul id="controls-list">
+          <li><b>Click sàn</b> hoặc <b>WASD</b> để đi · <b>kéo</b> để xoay · <b>lăn chuột</b> để zoom</li>
+          <li><b>Click bàn</b> (hoặc <b>E</b>) để ngồi vào ghế trống</li>
+          <li>Ngồi rồi: <b>1</b> dzô (ly rỗng thì em rót bia tới rót trước) · <b>5</b> gọi mồi · <b>6</b> nước lọc · <b>B</b> tính tiền</li>
+          <li><b>8</b> chọn người cùng bàn để mời một ly, đồng ý là cả bàn dzô · <b>3</b> vẫy chào · <b>4</b> vỗ tay</li>
+          <li>Lên <b>sân khấu karaoke</b> xếp hàng hát. Mỗi 10 phút có <b>giờ vàng</b>, cả quán cùng dzô</li>
+        </ul>
       </details>
       <details class="controls">
         <summary>🎼 Thông tin âm nhạc</summary>

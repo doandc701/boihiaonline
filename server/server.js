@@ -11,6 +11,7 @@ import {
 } from '../shared/world.js';
 import { SONGS, parseYouTube, YT_ID } from '../shared/songs.js';
 import { voiceEnabled, voiceUrl, voiceCsp, voiceRoom, voiceToken } from './voice.js';
+import { createGames } from './games.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.PORT) || 8000;
@@ -159,6 +160,7 @@ for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, async () => {
   if (shuttingDown) return;
   shuttingDown = true;
   for (const room of rooms.values()) broadcast(room, { t: 'restart' });
+  games.cancelAll(); // hoàn tiền cược đang giữ trước khi lưu ví
   await Promise.race([saveState(), new Promise((r) => setTimeout(r, 6000))]);
   process.exit(0);
 });
@@ -262,6 +264,40 @@ function broadcast(room, msg) {
 function toTable(room, table, msg) {
   const s = JSON.stringify(msg);
   for (const o of room.players.values()) if (o.seat?.table === table && o.ws.readyState === 1) o.ws.send(s);
+}
+// Trò chơi cùng bàn (server/games.js). payBill dùng chung với nút Thanh toán.
+const games = createGames({
+  toTable, send: (ws, msg) => send(ws, msg), spend: (p, amount) => spend(p, amount), fmtMoney: (n) => fmtMoney(n),
+  payBill: (room, p, table) => payBill(room, p, table),
+  // Thua bị phạt: rót một ly tính vào hoá đơn bàn (như rót thường) rồi uống cạn.
+  penalize: (room, p) => {
+    if (!p.seat) return;
+    const table = p.seat.table;
+    openTab(room, table).pours++;
+    charge(room, p, table, drinkOfTable(TABLES[table]).price);
+    p.cupFull = false;
+    toTable(room, table, tabMsg(room, table));
+  },
+  billOf: (room, table) => (room.tabs[table].paidBy ? 0 : tabTotal(TABLES[table], room.tabs[table])),
+});
+const seatedAt = (room, table) => [...room.players.values()].filter((o) => o.seat?.table === table);
+
+// Thanh toán cả hoá đơn bàn cho p (nút Thanh toán, hoặc bị bốc thăm). Trả về true nếu đã trả.
+function payBill(room, p, table) {
+  const tab = room.tabs[table];
+  if (tab.paidBy) { send(p.ws, { t: 'notice', msg: `Bàn này ${tab.paidName} đã thanh toán rồi 💸` }); return false; }
+  if (!tab.items.length) { send(p.ws, { t: 'notice', msg: 'Bàn chưa gọi món nào, gọi món trước rồi mới tính tiền nhé!' }); return false; }
+  const bill = tabTotal(TABLES[table], tab);
+  if (p.wallet.money < bill) {
+    send(p.ws, { t: 'broke', msg: `💸 Ví còn ${fmtMoney(p.wallet.money)}, không đủ trả ${fmtMoney(bill)}. Nhờ người khác trả, hoặc ra biển kiếm thêm nhé!` });
+    return false;
+  }
+  spend(p, bill);
+  tab.paidBy = p.id;
+  tab.paidName = p.name;
+  toTable(room, table, { t: 'paid', table, by: p.id, name: p.name, total: tabTotal(TABLES[table], tab) });
+  toTable(room, table, tabMsg(room, table));
+  return true;
 }
 const pub = (p) => ({ id: p.id, name: p.name, look: p.look, x: p.x, z: p.z, f: p.f, yaw: p.yaw, d: p.d, seat: p.seat });
 const roomMsg = (room, table) => ({ t: 'room', table, ...(room.privateRooms.get(table) || { owner: null, locked: false }) });
@@ -395,6 +431,7 @@ function setRoomLock(room, p, locked) {
 function stand(room, p) {
   if (!p.seat) return;
   const { table, idx } = p.seat;
+  games.leaveTable(room, p, table); // đang chơi trò cùng bàn thì rời trò
   room.seats.delete(`${table}:${idx}`);
   p.seat = null;
   if (p.voiceMic?.scope === 'table') setVoiceMic(room, p, null); // rời bàn thì không còn nói ở kênh bàn
@@ -598,21 +635,21 @@ function handle(room, p, m) {
     case 'pay': {
       // Chỉ người đang ngồi bàn, bàn đã gọi món, và chưa ai trả mới thanh toán được.
       if (!p.seat || !cooldown(p, 'pay', 1000)) return;
-      const table = p.seat.table, tab = room.tabs[table];
-      if (tab.paidBy) { send(p.ws, { t: 'notice', msg: `Bàn này ${tab.paidName} đã thanh toán rồi 💸` }); return; }
-      if (!tab.items.length) { send(p.ws, { t: 'notice', msg: 'Bàn chưa gọi món nào, gọi món trước rồi mới tính tiền nhé!' }); return; }
-      const bill = tabTotal(TABLES[table], tab);
-      if (p.wallet.money < bill) {
-        send(p.ws, { t: 'broke', msg: `💸 Ví còn ${fmtMoney(p.wallet.money)}, không đủ trả ${fmtMoney(bill)}. Nhờ người khác trả, hoặc ra biển kiếm thêm nhé!` });
-        return;
-      }
-      spend(p, bill);
-      tab.paidBy = p.id;
-      tab.paidName = p.name;
-      toTable(room, table, { t: 'paid', table, by: p.id, name: p.name, total: tabTotal(TABLES[table], tab) });
-      toTable(room, table, tabMsg(room, table));
+      payBill(room, p, p.seat.table);
       break;
     }
+    case 'game-start':
+      if (cooldown(p, 'game-start', 5000) && p.seat) games.start(room, p, m, seatedAt(room, p.seat.table));
+      break;
+    case 'game-join':
+      if (cooldown(p, 'game-join', 300)) games.join(room, p, m);
+      break;
+    case 'game-stop':
+      if (cooldown(p, 'game-stop', 300)) games.stop(room, p);
+      break;
+    case 'game-move':
+      if (cooldown(p, 'game-move', 300)) games.move(room, p, m);
+      break;
     case 'pay-debt': {
       if (!(p.wallet.debt > 0) || !cooldown(p, 'pay-debt', 1000)) return;
       if (p.f !== 0 || Math.hypot(p.x - 4.8, p.z + 1.7) > 3.5) { send(p.ws, { t: 'notice', msg: '📒 Ra quầy thu ngân tầng 1 trả nợ nhé!' }); return; }

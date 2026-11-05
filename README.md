@@ -34,6 +34,7 @@ Mở nhiều tab hoặc nhiều máy trong cùng mạng là thấy nhau.
 
 - **Ngồi bàn:** click vào bàn để ngồi ghế trống.
 - **Dzô:** một người dzô là cả bàn dzô theo, ly ai rỗng thì tự rót đầy (tính vào hoá đơn). Bấm 🤝 (phím 8) chọn người cùng bàn để mời, đồng ý là cùng dzô.
+- **Trò chơi cùng bàn:** bấm 🎲 (phím 9) rủ cả bàn chơi Quay chai, Lắc xí ngầu, Oẳn tù tì, Đố vui hoặc Bốc thăm chịu bill. Có thể cược 10k–50k tiền ảo, thua thì uống cạn một ly.
 - **Chat:** kênh 🌏 Cả quán ai trong cơ sở cũng thấy, kênh 🪑 Bàn chỉ người cùng bàn thấy.
 - **Thoại:** chọn kênh 🎧 Bàn hoặc Cả quán phía trên khung chat, bấm 🎙️ (phím V) để nói. Có thể tắt tiếng từng người trong danh sách 👥.
 - **Karaoke:** lên sân khấu chọn bài và xếp hàng. Người đứng dưới bấm 💃 để nhảy theo.

@@ -355,6 +355,35 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
 }
 #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; visibility: visible; transition: transform .3s, opacity .3s; }
 
+/* Trò chơi cùng bàn */
+.games-panel { max-width: 460px; }
+.games-list { display: grid; gap: 6px; margin: 10px 0; text-align: left; max-height: 45vh; overflow: auto; }
+.game-card { display: flex; gap: 10px; align-items: center; background: var(--field); color: var(--text); border-radius: 12px; padding: 8px 12px; font-weight: 400; text-align: left; }
+.game-card.on { outline: 2px solid var(--accent); }
+.game-card .ico { font-size: 1.7rem; }
+.game-card small { display: block; color: var(--muted); font-size: .78rem; }
+#games-bet-row.dim { opacity: .5; }
+.game-panel { position: fixed; left: 50%; top: calc(14px + env(safe-area-inset-top)); transform: translateX(-50%); z-index: 4;
+  width: min(440px, calc(100% - 24px)); background: color-mix(in srgb, var(--panel) 92%, transparent); color: var(--text);
+  border: 2px solid var(--accent); border-radius: 14px; padding: 8px 12px; box-shadow: 0 8px 24px #0005; text-align: center; }
+.game-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.game-head button { padding: 2px 10px; }
+.game-timer { height: 4px; background: var(--field); border-radius: 2px; overflow: hidden; margin: 6px 0; }
+.game-timer i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .9s linear; }
+.game-players { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; font-size: .8rem; }
+.game-players .gp { background: var(--field); border-radius: 99px; padding: 2px 8px; }
+.game-players .gp.lose { background: #e5393533; outline: 1px solid #e53935; }
+.game-players .gp.win { background: #43a04733; outline: 1px solid #43a047; }
+.game-players small { color: #2e7d32; font-weight: 700; }
+.game-players small.why { color: #c62828; font-weight: 500; }
+.game-status { margin: 6px 0; font-size: .88rem; }
+.game-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.game-actions button { padding: 6px 12px; font-size: .9rem; }
+.game-actions.quiz { flex-direction: column; }
+.game-actions.quiz button { text-align: left; }
+/* Điện thoại: chip HUD chiếm góc trên, nên bảng trò chơi nằm dưới, ngay trên thanh hành động */
+@media (max-width: 900px) { .game-panel { top: auto; bottom: calc(150px + env(safe-area-inset-bottom)); } }
+
 /* Ví, câu cá, giỏ đồ */
 .wallet-chip.broke { background: #c62828; color: #fff; animation: micPulse 1.2s ease-in-out infinite; }
 .fish-btn b { animation: none; }
@@ -419,7 +448,8 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
 }
 .chat-tabs button.on { opacity: 1; background: #ffffff14; box-shadow: inset -3px 0 0 #f2c94c; }
 .chat-tabs button:disabled { opacity: .25; cursor: default; }
-.chat .badge { position: absolute; top: 6px; right: 6px; width: 9px; height: 9px; border-radius: 50%; background: #e53935; }
+.chat .badge { position: absolute; top: 3px; right: 3px; min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border-radius: 99px;
+  background: #e53935; color: #fff; font: 700 10px/16px system-ui, sans-serif; font-style: normal; text-align: center; }
 .chat-main { position: relative; min-width: 0; padding: 6px 34px 6px 10px; }
 .chat-close {
   position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; padding: 0; border-radius: 50%;
@@ -430,6 +460,7 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
 .chat-log div { overflow-wrap: anywhere; text-shadow: 0 1px 2px #000; }
 .chat-log b { color: #7ec8ff; font-weight: 700; }
 .chat-log .sys { color: #ffcc80; font-style: italic; }
+.chat-log .ch-all { color: #ffb74d; font-weight: 700; margin-right: 4px; } /* nhãn [Cả quán] trong tab Bàn */
 .chat-panel form { grid-column: 1 / -1; display: flex; gap: 6px; padding: 6px; background: #00000066; border-top: 1px solid #ffffff1a; }
 .chat input {
   flex: 1; min-width: 0; background: #ffffff1a; color: #fff; border: 1px solid #ffffff33; border-radius: 8px;
@@ -613,3 +644,24 @@ html .donate-btn { font-size: .82rem; padding: 6px 14px; border-radius: 12px; bo
 
 /* Nút nhóm: một biểu tượng chung cho cả nhóm, to rõ */
 .action-bar .ab-trigger b { font-size: 1.6rem; filter: drop-shadow(0 1px 1px #0006); }
+
+/* Điện thoại: hộp nào cũng gói gọn trong một màn hình, phần dài thì cuộn bên trong, nút chính luôn nhìn thấy */
+@media (max-width: 640px), (max-height: 700px) {
+  .overlay { padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom)); }
+  .panel { padding: 14px 14px; border-radius: 14px; }
+  .panel h1 { font-size: 1.35rem; }
+  .panel h2 { font-size: 1.15rem; }
+  /* Màn hình vào quán: nhân vật nhỏ lại, nút Vào quán dính đáy hộp */
+  .panel.start .sub { font-size: .82rem; margin-bottom: 6px; }
+  #preview { height: min(190px, 24dvh); }
+  .panel.start .field { margin: 6px 0; }
+  #btn-enter { position: sticky; bottom: 0; z-index: 2; width: 100%; margin-top: 8px; box-shadow: 0 -10px 16px var(--panel); }
+  /* Chọn bài: danh sách co lại theo chiều cao màn hình để nút Tìm / Đóng không bị đẩy ra ngoài */
+  #overlay-songs .panel { display: flex; flex-direction: column; max-height: 100%; overflow: hidden; }
+  #overlay-songs .song-list { flex: 1 1 auto; max-height: none; min-height: 120px; }
+  #overlay-songs .seg.wrap { margin: 6px 0; }
+  #song-hint { margin: 6px 0; font-size: .72rem; }
+  #overlay-songs .row-btns { margin-top: 6px; }
+  /* Ủng hộ: mã QR vừa màn hình */
+  .qr-card img { max-height: 36dvh; width: auto; max-width: 100%; }
+}
