@@ -96,6 +96,10 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
 #voice-settings .field { display: block; margin: 8px 0; }
 #voice-settings .seg { display: flex; justify-content: flex-start; margin-top: 6px; }
 /* Mic đang bật: viên đỏ nhấp nháy trên khung chat, bấm để tắt */
+/* Nút mic góc phải: tắt thì có gạch chéo đỏ, bật thì nền đỏ nhấp nháy */
+.mic-icon { position: relative; }
+.mic-icon:not(.on)::after { content: ''; position: absolute; left: 22%; right: 22%; top: 50%; height: 3px; border-radius: 2px; background: #ff5252; transform: rotate(-45deg); box-shadow: 0 0 0 1.5px #1e1b3a; pointer-events: none; }
+html .mic-icon.on { --b1: #ff5a5a; --b2: #e53935; --be: #a8202a; animation: micPulse 1.2s ease-in-out infinite; }
 .voice-live { align-self: flex-start; padding: 6px 12px; border-radius: 99px; background: #e53935; color: #fff; font-weight: 700; font-size: .85rem; animation: micPulse 1.2s ease-in-out infinite; }
 @keyframes micPulse { 50% { box-shadow: 0 0 0 4px #e5393555; } }
 /* Điện thoại, chat đang thu gọn: một hàng gồm nút 💬 (và viên mic đỏ khi đang nói) */
@@ -598,7 +602,7 @@ button.big { font-size: 1.15rem; padding: 14px 28px; background: var(--danger); 
   .action-bar kbd { display: none; }
   .top-left { gap: 4px; font-size: .8rem; max-width: calc(100% - 170px); }
   .chip { padding: 5px 10px; font-size: .82rem; }
-  .icon { width: 38px; height: 38px; font-size: 1rem; }
+  .icon { width: 34px; height: 34px; font-size: .95rem; } /* 5–6 nút góc phải vẫn không chạm hàng ví tiền */
   .top-right { gap: 6px; }
   .dm-bar { width: 132px; height: 22px; }
   .meter { gap: 6px; }

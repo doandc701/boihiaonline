@@ -4477,6 +4477,11 @@ function renderVoice() {
     : voice.scope ? `Đang nghe kênh ${ch}${voice.mic ? `, mic đang bật (${ch === 'Bàn' ? 'cả bàn' : 'cả quán'} nghe bạn nói)` : ''}.`
     : want === 'off' ? 'Thoại đang đóng. Chọn kênh để nghe, bật mic (hoặc phím V) để nói.'
     : `🔊 Sẵn sàng nghe kênh ${VOICE_LABEL[want]}: có người bật mic là tự nghe. Bật mic (hoặc phím V) để nói.`;
+  // Nút mic ở hàng nút góc phải: gạch chéo khi tắt, đỏ nhấp nháy khi đang nói
+  const micBtn = $('btn-mic');
+  micBtn.classList.toggle('hidden', !features.voice);
+  micBtn.classList.toggle('on', voice.mic);
+  micBtn.title = voice.mic ? `Mic đang bật (kênh ${ch}). Bấm để tắt (V)` : 'Bật mic để nói (V)';
   const live = $('voice-live');
   live.classList.toggle('hidden', !voice.mic || !state.started);
   live.textContent = `🎙️ ${ch}`;
@@ -4522,6 +4527,7 @@ function voiceMicOn() {
   joinVoice(want !== 'off' ? want : meA?.seat ? 'table' : 'all');
 }
 const toggleVoiceMic = () => (voice.mic ? setVoiceMic(false) : voiceMicOn());
+$('btn-mic').onclick = () => toggleVoiceMic();
 document.querySelectorAll('[data-vmic]').forEach((b) => (b.onclick = () => (b.dataset.vmic === 'on' ? voiceMicOn() : setVoiceMic(false))));
 $('voice-live').onclick = (e) => { e.currentTarget.blur(); setVoiceMic(false); };
 // Rời bàn / đổi bàn thì ra khỏi kênh thoại của bàn cũ; lúc đó muốn nghe Bàn thì chuyển sang Cả quán.
