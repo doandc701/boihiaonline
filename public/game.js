@@ -3561,7 +3561,9 @@ function syncVideo() {
     p.seekTo(elapsed + 0.3, true); // bù thời gian video tải lại sau khi kéo
   }
   const level = karaokeLevel();
-  p.setVolume(Math.round(settings.karaoke * level));
+  // Thang âm lượng của YouTube không tuyến tính: 12/100 nghe gần như im, trong khi file phát qua Web Audio ở 0,12 vẫn rõ.
+  // Lấy căn bậc hai để bài YouTube và bài phát từ file to ngang nhau ở cùng chỗ đứng (vd. trong quán tầng 1: 12 → ~35).
+  p.setVolume(Math.round(100 * Math.sqrt((settings.karaoke / 100) * level)));
   if (!level || tv.localMute || muted || settings.karaoke === 0 || (document.hidden && !settings.bgPlay)) p.mute();
   else p.unMute();
 }
