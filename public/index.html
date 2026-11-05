@@ -180,26 +180,25 @@
     <div id="prompt" class="prompt hidden"></div>
     <div id="golden" class="golden hidden"></div>
 
-    <!-- Thanh hành động: mỗi nhóm (uống / gọi & mời / giao lưu) là một nút, bấm mở ra các nút con; cuối là nút riêng
+    <!-- Thanh hành động: mỗi nhóm (uống / gọi mồi / giao lưu) là một nút, bấm mở ra các nút con; cuối là nút riêng
          (câu cá, đứng dậy). Nhóm không còn nút con nào hiện thì tự ẩn (CSS :has). -->
     <div class="action-bar">
       <div class="ab-group" role="group" aria-label="Uống">
-        <button type="button" class="ab-trigger" aria-haspopup="true" aria-expanded="false" title="Uống"><b>🍻</b><span>Uống</span></button>
+        <button type="button" class="ab-trigger" aria-haspopup="true" aria-expanded="false" title="Uống"><b>🍺</b><span>Uống</span></button>
         <div class="ab-menu">
           <button data-act="cheers" class="seat-only hidden" title="Dzô (1 / Space)"><kbd>1</kbd><b>🥂</b><span>Dzô</span></button>
-          <button data-act="pour" class="seat-only hidden" title="Rót (2 / R)"><kbd>2</kbd><b>🍺</b><span>Rót</span></button>
+          <button data-act="invite" id="btn-invite" class="hidden" title="Mời một người cùng bàn một ly (8)"><kbd>8</kbd><b>🤝</b><span>Mời ly</span></button>
           <button data-act="water" class="seat-only hidden" title="Nước lọc (6 / N)"><kbd>6</kbd><b>💧</b><span>Nước lọc</span></button>
         </div>
       </div>
-      <div class="ab-group" role="group" aria-label="Gọi món và mời">
-        <button type="button" class="ab-trigger" aria-haspopup="true" aria-expanded="false" title="Gọi & mời"><b>📜</b><span>Gọi & mời</span></button>
+      <div class="ab-group" role="group" aria-label="Gọi mồi">
+        <button type="button" class="ab-trigger" aria-haspopup="true" aria-expanded="false" title="Gọi mồi"><b>📜</b><span>Gọi mồi</span></button>
         <div class="ab-menu">
           <button data-act="menu" class="seat-only hidden" title="Gọi mồi (5 / M)"><kbd>5</kbd><b>📜</b><span>Gọi mồi</span></button>
-          <button data-act="invite" id="btn-invite" class="hidden" title="Mời một người cùng bàn một ly (8)"><kbd>8</kbd><b>🤝</b><span>Mời ly</span></button>
         </div>
       </div>
       <div class="ab-group" role="group" aria-label="Giao lưu">
-        <button type="button" class="ab-trigger" aria-haspopup="true" aria-expanded="false" title="Giao lưu"><b>😄</b><span>Giao lưu</span></button>
+        <button type="button" class="ab-trigger" aria-haspopup="true" aria-expanded="false" title="Giao lưu"><b>🙌</b><span>Giao lưu</span></button>
         <div class="ab-menu">
           <button data-act="wave" title="Vẫy chào (3)"><kbd>3</kbd><b>👋</b><span>Chào</span></button>
           <button data-act="clap" title="Vỗ tay (4)"><kbd>4</kbd><b>👏</b><span>Vỗ tay</span></button>
@@ -270,7 +269,7 @@
         <ul id="controls-list">
           <li><b>Click sàn</b> hoặc <b>WASD</b> để đi · <b>kéo</b> để xoay · <b>lăn chuột</b> để zoom</li>
           <li><b>Click bàn</b> (hoặc <b>E</b>) để ngồi vào ghế trống</li>
-          <li>Ngồi rồi: <b>1</b> dzô · <b>2</b> rót · <b>5</b> gọi mồi · <b>6</b> nước lọc · <b>B</b> tính tiền</li>
+          <li>Ngồi rồi: <b>1</b> dzô (ly rỗng thì em rót bia tới rót trước) · <b>5</b> gọi mồi · <b>6</b> nước lọc · <b>B</b> tính tiền</li>
           <li><b>8</b> chọn người cùng bàn để mời một ly, đồng ý là cả bàn dzô · <b>3</b> vẫy chào · <b>4</b> vỗ tay</li>
           <li>Lên <b>sân khấu karaoke</b> xếp hàng hát. Mỗi 10 phút có <b>giờ vàng</b>, cả quán cùng dzô</li>
         </ul>
@@ -282,6 +281,7 @@
 
   <div id="overlay-menu" class="overlay hidden">
     <div class="panel framed menu-panel">
+      <button id="btn-menu-x" class="close-x" title="Đóng thực đơn (không gọi món)" aria-label="Đóng thực đơn">✕</button>
       <div class="panel-head">
         <h2>📜 Thực đơn</h2>
         <p id="menu-target" class="sub"></p>
@@ -289,7 +289,6 @@
       </div>
       <div class="panel-body">
         <div id="menu-items" class="menu-items"></div>
-        <button id="btn-round" class="round">🍻 Bao cả quán một két <small>(500.000đ ảo)</small></button>
       </div>
       <div class="panel-foot row-btns">
         <button id="btn-menu-close">Xong</button>
@@ -465,7 +464,6 @@
       <div id="bill"></div>
       <div class="row-btns">
         <button id="btn-pay" class="pay-btn">💸 Thanh toán</button>
-        <button id="btn-again">🔁 Làm tăng 2</button>
         <button id="btn-home" class="ghost">🏠 Về nhà</button>
       </div>
     </div>

@@ -346,12 +346,25 @@ function leave(room, p) {
 
 function sit(room, p, m) {
   const T = TABLES[m.table];
-  if (!T || p.seat || room.mic.singer === p.id) return;
+  if (!T || room.mic.singer === p.id) return;
+  // Ghế người chơi chọn (bấm gần ghế nào thì ngồi ghế đó), nếu ghế đó còn trống và không phải ghế của NPC.
+  const want = Number.isInteger(m.idx) && m.idx >= 0 && m.idx < T.seats && !T.npcSeats?.includes(m.idx)
+    && !room.seats.has(`${T.id}:${m.idx}`) ? m.idx : -1;
+  if (p.seat) {
+    // Đang ngồi thì chỉ được đổi sang ghế trống khác cùng bàn (giữ nguyên hoá đơn, ly bia).
+    if (p.seat.table !== T.id || want < 0) return;
+    room.seats.delete(`${T.id}:${p.seat.idx}`);
+    room.seats.set(`${T.id}:${want}`, p.id);
+    p.seat.idx = want;
+    Object.assign(p, seatPos(T, want));
+    broadcast(room, { t: 'seat', id: p.id, table: T.id, idx: want });
+    return;
+  }
   const priv = room.privateRooms.get(T.id);
   if (priv?.locked && priv.owner !== p.id) { send(p.ws, { t: 'sit-fail', table: T.id, locked: true }); return; }
   const hold = room.holds.get(T.id);
   if (hold && !room.tabs[T.id].members.includes(p.pid)) { send(p.ws, { t: 'sit-fail', table: T.id, held: true }); return; }
-  const idx = nearestFreeSeat(T, (i) => room.seats.has(`${T.id}:${i}`), p.x, p.z);
+  const idx = want >= 0 ? want : nearestFreeSeat(T, (i) => room.seats.has(`${T.id}:${i}`), p.x, p.z);
   if (idx < 0) { send(p.ws, { t: 'sit-fail', table: T.id }); return; }
   if (hold) { // người trong nhóm quay lại: thôi giữ chỗ, nhậu tiếp hoá đơn cũ
     clearTimeout(hold.timer);
@@ -552,7 +565,11 @@ function handle(room, p, m) {
       // Người đang nợ quán thì chưa được rót (cũng như chưa được gọi món).
       const ids = [...room.players.values()].filter((o) => o.seat?.table === table && !o.cupFull && !(o.wallet.debt > 0))
         .sort((a, b) => a.seat.idx - b.seat.idx).map((o) => o.id);
-      if (!ids.length) { send(p.ws, { t: 'notice', msg: 'Ly ai cũng đầy rồi, dzô đi! 🍻' }); return; }
+      // cheers: rót kèm dzô (bấm Dzô); ly ai cũng đầy thì báo lại để máy người bấm dzô luôn.
+      if (!ids.length) {
+        send(p.ws, m.cheers ? { t: 'pour-round', table, by: p.id, ids: [], cheers: true } : { t: 'notice', msg: 'Ly ai cũng đầy rồi, dzô đi! 🍻' });
+        return;
+      }
       if (!canAfford(room, p, drinkOfTable(TABLES[table]).price * ids.length)) return;
       const price = drinkOfTable(TABLES[table]).price;
       for (const id of ids) {
@@ -561,7 +578,7 @@ function handle(room, p, m) {
         charge(room, o, table, price); // ai uống ly nào ghi phần người đó
       }
       openTab(room, table).pours += ids.length;
-      broadcast(room, { t: 'pour-round', table, by: p.id, ids });
+      broadcast(room, { t: 'pour-round', table, by: p.id, ids, cheers: !!m.cheers });
       toTable(room, table, tabMsg(room, table));
       break;
     }
